@@ -193,7 +193,7 @@ function Header({ onNewFile, onTweaks, filledCount, totalSlots }) {
         </div>
         <div className="brand-text">
           <div className="brand-title">TRIM CODE</div>
-          <div className="brand-sub">INJECTOR ID SCANNER <span className="sep">·</span> v1.4</div>
+          <div className="brand-sub">INJECTOR ID SCANNER</div>
         </div>
       </div>
 
@@ -205,10 +205,6 @@ function Header({ onNewFile, onTweaks, filledCount, totalSlots }) {
         <div className="s-item">
           <span className="s-k">FILL</span>
           <span className="s-bar"><i style={{ width: `${pct}%` }}/></span>
-        </div>
-        <div className="s-item">
-          <span className="s-k">CAM</span>
-          <span className="s-v live"><span className="pulse"/>READY</span>
         </div>
       </div>
 
