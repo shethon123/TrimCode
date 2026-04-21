@@ -1,4 +1,5 @@
-import React from 'react'
+import { useEffect, useRef } from 'react'
+import JsBarcode from 'jsbarcode'
 
 export const TWEAK_DEFAULTS = {
   layout: 'grid',
@@ -82,29 +83,22 @@ export function beep(freq = 880, dur = 0.08) {
   } catch (e) {}
 }
 
-export function BarcodePreview({ value, width = 180, height = 36, color }) {
+export function BarcodePreview({ value, width = 220, height = 40 }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!ref.current || !value) return
+    try {
+      JsBarcode(ref.current, value, {
+        format: 'CODE128',
+        width: 1.2,
+        height: height,
+        displayValue: false,
+        margin: 0,
+      })
+    } catch (e) {}
+  }, [value, width, height])
   if (!value) return null
-  const bars = []
-  let x = 2
-  let i = 0
-  while (x < width - 2 && i < value.length * 3) {
-    const ch = value.charCodeAt(i % value.length) + i
-    const w = 1 + (ch % 4)
-    const on = (ch % 3) !== 0
-    if (on) bars.push({ x, w })
-    x += w + 1
-    i++
-  }
-  return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ display: 'block' }}>
-      {bars.map((b, k) => (
-        <rect key={k} x={b.x} y={2} width={b.w} height={height - 12} fill={color || 'currentColor'} />
-      ))}
-      <text x={width / 2} y={height - 2} textAnchor="middle" fontSize="7" fontFamily="JetBrains Mono, monospace" fill={color || 'currentColor'} opacity="0.75" letterSpacing="1">
-        {trimRight(value, 10)}
-      </text>
-    </svg>
-  )
+  return <svg ref={ref} style={{ display: 'block', width: '100%', height }} preserveAspectRatio="none" />
 }
 
 export const Icon = {
