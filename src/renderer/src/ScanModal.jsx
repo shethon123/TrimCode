@@ -1,40 +1,48 @@
-import { useState, useEffect } from 'react'
-import { trimRight, fakeScan, beep, Icon } from './utils'
+import { useState, useEffect, useRef } from 'react'
+import { trimRight, beep, Icon } from './utils'
 
 export default function ScanModal({ slotIndex, onComplete, onCancel, showPreview, trimDigits, beepOnScan }) {
   const [phase, setPhase] = useState('aiming')
   const [code, setCode] = useState('')
-  const [progress, setProgress] = useState(0)
   const [flickerChars, setFlickerChars] = useState('')
+  const scanBuffer = useRef('')
 
+  // Flicker animation runs continuously until scanner input arrives
   useEffect(() => {
     if (phase !== 'aiming') return
-    const t0 = performance.now()
     let raf
-    const tick = (t) => {
-      const p = Math.min(1, (t - t0) / 2000)
-      setProgress(p)
+    const tick = () => {
       const pool = 'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789-'
       let s = ''
       for (let i = 0; i < 18; i++) s += pool[Math.floor(Math.random() * pool.length)]
       setFlickerChars(s)
-      if (p >= 1) {
-        const scanned = fakeScan()
-        setCode(scanned)
-        setPhase('found')
-        if (beepOnScan) beep(1200, 0.09)
-      } else {
-        raf = requestAnimationFrame(tick)
-      }
+      raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
   }, [phase])
 
+  // Capture keyboard input from scanner tool
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape') onCancel()
-      if (e.key === 'Enter' && phase === 'found') onComplete(code)
+      if (e.key === 'Escape') { onCancel(); return }
+      if (phase === 'found') {
+        if (e.key === 'Enter') onComplete(code)
+        return
+      }
+      if (e.key === 'Enter') {
+        const scanned = scanBuffer.current.trim()
+        if (scanned) {
+          setCode(scanned)
+          setPhase('found')
+          if (beepOnScan) beep(1200, 0.09)
+          scanBuffer.current = ''
+        }
+      } else if (e.key === 'Backspace') {
+        scanBuffer.current = scanBuffer.current.slice(0, -1)
+      } else if (e.key.length === 1) {
+        scanBuffer.current += e.key
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -82,22 +90,6 @@ export default function ScanModal({ slotIndex, onComplete, onCancel, showPreview
             {phase === 'found' && <div className="dec-ok"><Icon.Check size={12}/> CODE LOCKED</div>}
           </div>
 
-          <div className="vf-readout">
-            <div className="row">
-              <span className="k">SIGNAL</span>
-              <span className="bar"><i style={{ width: `${Math.round(progress * 100)}%` }}/></span>
-              <span className="v">{Math.round(progress * 100)}%</span>
-            </div>
-            <div className="row">
-              <span className="k">MODE</span>
-              <span className="v">QR · DataMatrix · Code128</span>
-            </div>
-            <div className="row">
-              <span className="k">STATUS</span>
-              <span className="v">{phase === 'aiming' ? 'SEARCHING…' : 'LOCKED'}</span>
-            </div>
-          </div>
-
           {phase === 'found' && (
             <div className="lock-badge"><Icon.Check size={18}/> LOCKED</div>
           )}
@@ -113,7 +105,7 @@ export default function ScanModal({ slotIndex, onComplete, onCancel, showPreview
               </div>
             </div>
             <div className="res-actions">
-              <button className="ghost-btn" onClick={() => { setPhase('aiming'); setProgress(0); setCode('') }}>
+              <button className="ghost-btn" onClick={() => { setPhase('aiming'); setCode('') }}>
                 RESCAN
               </button>
               <button className="primary-btn" onClick={() => onComplete(code)}>
