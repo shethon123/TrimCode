@@ -54,6 +54,12 @@ export default function App() {
       navigator.clipboard.writeText(trimRight(code, tweaks.trimDigits)).catch(() => {})
       showToast('Auto-copied to clipboard')
     }
+    if (tweaks.autoAdvance) {
+      const updated = slots.map((s, i) => i === idx ? { ...s, code } : s)
+      let next = updated.findIndex((s, i) => i > idx && !s.code)
+      if (next === -1) next = updated.findIndex(s => !s.code)
+      if (next !== -1) setTimeout(() => setScanning(next), 50)
+    }
   }
 
   const copySlot = (i) => {

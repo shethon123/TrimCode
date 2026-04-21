@@ -8,6 +8,7 @@ export const TWEAK_DEFAULTS = {
   trimDigits: 6,
   autoCopy: false,
   beepOnScan: true,
+  autoAdvance: false,
   slotCount: 6,
 }
 

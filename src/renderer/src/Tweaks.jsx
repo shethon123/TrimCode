@@ -66,6 +66,12 @@ export default function TweaksPanel({ tweaks, setTweaks, open, onClose }) {
           <span/>
         </button>
       </div>
+      <div className="tweak-row toggle">
+        <label>AUTO ADVANCE</label>
+        <button className={`sw ${tweaks.autoAdvance ? 'on' : ''}`} onClick={() => patch('autoAdvance', !tweaks.autoAdvance)}>
+          <span/>
+        </button>
+      </div>
     </div>
   )
 }
