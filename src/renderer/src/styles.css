@@ -452,6 +452,9 @@ body[data-theme="paper"] .save-btn { color: #faf6ec; }
 .si-file { font-size: 9px; color: var(--fg-mute); margin-top: 4px; word-break: break-all; }
 .si-dl { color: var(--fg-dim); }
 .side-item:hover .si-dl { color: var(--accent); }
+.si-del { color: var(--fg-mute); opacity: 0; transition: opacity .15s, color .15s; }
+.side-item:hover .si-del { opacity: 1; }
+.si-del:hover { color: #e05555 !important; }
 
 .side-foot {
   padding: 10px 14px;

@@ -111,6 +111,10 @@ export default function App() {
     showToast(`Saved → ${filename}`)
   }
 
+  const deleteFile = (rec) => {
+    setSavedFiles((prev) => prev.filter(f => f.id !== rec.id))
+  }
+
   const redownload = async (rec) => {
     const result = await window.electronAPI.saveFile(rec.filename, rec.body)
     if (result.success) showToast(`Re-saved → ${rec.filename}`)
@@ -187,7 +191,7 @@ export default function App() {
           />
         </section>
 
-        <Sidebar savedFiles={savedFiles} onOpen={openFile} onRedownload={redownload} />
+        <Sidebar savedFiles={savedFiles} onOpen={openFile} onRedownload={redownload} onDelete={deleteFile} />
       </main>
 
       {scanning !== null && (
@@ -359,7 +363,7 @@ function ActionBar({ onCopyAll, onSave, filledCount, total, copied, readyToSave 
   )
 }
 
-function Sidebar({ savedFiles, onOpen, onRedownload }) {
+function Sidebar({ savedFiles, onOpen, onRedownload, onDelete }) {
   return (
     <aside className="sidebar">
       <div className="side-head">
@@ -383,6 +387,7 @@ function Sidebar({ savedFiles, onOpen, onRedownload }) {
               <div className="si-file">{rec.filename}</div>
             </div>
             <div className="si-dl" onClick={(e) => { e.stopPropagation(); onRedownload(rec) }}><Icon.Download size={14}/></div>
+            <div className="si-del" onClick={(e) => { e.stopPropagation(); onDelete(rec) }}><Icon.X size={12}/></div>
           </div>
         ))}
       </div>
