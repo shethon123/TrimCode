@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron/main'
 import { join } from 'path'
 import { mkdirSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
