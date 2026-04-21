@@ -1,0 +1,374 @@
+import { useState, useEffect, useRef } from 'react'
+import { TWEAK_DEFAULTS, uid, nowStamp, trimRight, BarcodePreview, Icon, buildFilename, formatFileContent } from './utils'
+import ScanModal from './ScanModal'
+import TweaksPanel from './Tweaks'
+
+const EMPTY_SLOTS = (n) => Array.from({ length: n }, () => ({ id: uid(), code: null, scannedAt: null }))
+
+export default function App() {
+  const [tweaks, setTweaks] = useState({ ...TWEAK_DEFAULTS })
+  const [tweaksOpen, setTweaksOpen] = useState(false)
+  const [company, setCompany] = useState('')
+  const [refId, setRefId] = useState('')
+  const [slots, setSlots] = useState(EMPTY_SLOTS(TWEAK_DEFAULTS.slotCount))
+  const [scanning, setScanning] = useState(null)
+  const [copied, setCopied] = useState(null)
+  const [savedFiles, setSavedFiles] = useState([])
+  const [toast, setToast] = useState(null)
+  const fileCounter = useRef(1)
+
+  useEffect(() => { document.body.dataset.theme = tweaks.theme }, [tweaks.theme])
+
+  useEffect(() => {
+    setSlots((prev) => {
+      const next = EMPTY_SLOTS(tweaks.slotCount)
+      for (let i = 0; i < Math.min(prev.length, tweaks.slotCount); i++) next[i] = prev[i]
+      return next
+    })
+  }, [tweaks.slotCount])
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('trimcode:session') || 'null')
+      if (saved) {
+        if (saved.company) setCompany(saved.company)
+        if (saved.refId) setRefId(saved.refId)
+        if (saved.slots && saved.slots.length) setSlots(saved.slots)
+        if (saved.savedFiles) setSavedFiles(saved.savedFiles)
+        if (saved.fileCounter) fileCounter.current = saved.fileCounter
+      }
+    } catch (e) {}
+  }, [])
+
+  useEffect(() => {
+    const data = { company, refId, slots, savedFiles, fileCounter: fileCounter.current }
+    localStorage.setItem('trimcode:session', JSON.stringify(data))
+  }, [company, refId, slots, savedFiles])
+
+  const completeScan = (code) => {
+    if (scanning === null) return
+    const idx = scanning
+    setSlots((prev) => prev.map((s, i) => i === idx ? { ...s, code, scannedAt: Date.now() } : s))
+    setScanning(null)
+    if (tweaks.autoCopy) {
+      navigator.clipboard.writeText(trimRight(code, tweaks.trimDigits)).catch(() => {})
+      showToast('Auto-copied to clipboard')
+    }
+  }
+
+  const copySlot = (i) => {
+    const s = slots[i]
+    if (!s.code) return
+    navigator.clipboard.writeText(trimRight(s.code, tweaks.trimDigits)).catch(() => {})
+    setCopied({ type: 'slot', key: i })
+    setTimeout(() => setCopied(null), 1400)
+  }
+
+  const copyAll = () => {
+    const lines = slots.filter(s => s.code).map((s, i) => `${String(i + 1).padStart(2, '0')}  ${trimRight(s.code, tweaks.trimDigits)}`)
+    if (!lines.length) return
+    navigator.clipboard.writeText(lines.join('\n')).catch(() => {})
+    setCopied({ type: 'all', key: 'all' })
+    setTimeout(() => setCopied(null), 1400)
+  }
+
+  const newFile = () => {
+    if (slots.some(s => s.code)) {
+      if (!confirm('Start a new file? Current unsaved scans will be cleared.')) return
+    }
+    setSlots(EMPTY_SLOTS(tweaks.slotCount))
+    setCompany('')
+    setRefId('')
+    showToast('New file started')
+  }
+
+  const saveFile = async () => {
+    const filled = slots.filter(s => s.code)
+    if (!filled.length) { showToast('Nothing to save — scan at least one code'); return }
+    if (!company.trim() || !refId.trim()) { showToast('Company and ID are required'); return }
+
+    const filename = buildFilename(company, refId)
+    const body = formatFileContent(slots, tweaks.trimDigits)
+    const result = await window.electronAPI.saveFile(filename, body)
+
+    if (!result.success) {
+      showToast(`Save failed: ${result.error}`)
+      return
+    }
+
+    const record = {
+      id: uid(),
+      n: fileCounter.current++,
+      filename,
+      company,
+      refId,
+      stamp: nowStamp(),
+      count: filled.length,
+      body,
+    }
+    setSavedFiles((prev) => [record, ...prev].slice(0, 40))
+    showToast(`Saved → ${filename}`)
+  }
+
+  const redownload = async (rec) => {
+    const result = await window.electronAPI.saveFile(rec.filename, rec.body)
+    if (result.success) showToast(`Re-saved → ${rec.filename}`)
+    else showToast(`Re-save failed: ${result.error}`)
+  }
+
+  const showToast = (msg) => {
+    setToast({ msg, key: uid() })
+    setTimeout(() => setToast((t) => t && t.msg === msg ? null : t), 2600)
+  }
+
+  const filledCount = slots.filter(s => s.code).length
+  const readyToSave = company.trim() && refId.trim() && filledCount > 0
+
+  return (
+    <div className={`app layout-${tweaks.layout}`}>
+      <Header
+        onNewFile={newFile}
+        onTweaks={() => setTweaksOpen(v => !v)}
+        filledCount={filledCount}
+        totalSlots={slots.length}
+      />
+
+      <main className="main">
+        <section className="scan-area">
+          <MetaBar
+            company={company} setCompany={setCompany}
+            refId={refId} setRefId={setRefId}
+            filledCount={filledCount} total={slots.length}
+          />
+
+          <SlotGrid
+            slots={slots}
+            layout={tweaks.layout}
+            showPreview={tweaks.showPreview}
+            trimDigits={tweaks.trimDigits}
+            onTapSlot={(i) => setScanning(i)}
+            onCopy={copySlot}
+            onClear={(i) => setSlots((prev) => prev.map((s, j) => j === i ? { id: uid(), code: null, scannedAt: null } : s))}
+            copied={copied}
+          />
+
+          <ActionBar
+            onCopyAll={copyAll}
+            onSave={saveFile}
+            filledCount={filledCount}
+            total={slots.length}
+            copied={copied}
+            readyToSave={readyToSave}
+          />
+        </section>
+
+        <Sidebar savedFiles={savedFiles} onRedownload={redownload} />
+      </main>
+
+      {scanning !== null && (
+        <ScanModal
+          slotIndex={scanning}
+          showPreview={tweaks.showPreview}
+          trimDigits={tweaks.trimDigits}
+          beepOnScan={tweaks.beepOnScan}
+          onComplete={completeScan}
+          onCancel={() => setScanning(null)}
+        />
+      )}
+
+      <TweaksPanel tweaks={tweaks} setTweaks={setTweaks} open={tweaksOpen} onClose={() => setTweaksOpen(false)} />
+
+      {toast && <div key={toast.key} className="toast">{toast.msg}</div>}
+    </div>
+  )
+}
+
+function Header({ onNewFile, onTweaks, filledCount, totalSlots }) {
+  const pct = Math.round((filledCount / totalSlots) * 100)
+  return (
+    <header className="header">
+      <div className="brand">
+        <div className="brand-mark">
+          <span className="m-bar"/><span className="m-bar"/><span className="m-bar"/><span className="m-bar"/><span className="m-bar"/><span className="m-bar"/>
+        </div>
+        <div className="brand-text">
+          <div className="brand-title">TRIM CODE</div>
+          <div className="brand-sub">INJECTOR ID SCANNER <span className="sep">·</span> v1.4</div>
+        </div>
+      </div>
+
+      <div className="status">
+        <div className="s-item">
+          <span className="s-k">SLOTS</span>
+          <span className="s-v">{String(filledCount).padStart(2, '0')}/{String(totalSlots).padStart(2, '0')}</span>
+        </div>
+        <div className="s-item">
+          <span className="s-k">FILL</span>
+          <span className="s-bar"><i style={{ width: `${pct}%` }}/></span>
+        </div>
+        <div className="s-item">
+          <span className="s-k">CAM</span>
+          <span className="s-v live"><span className="pulse"/>READY</span>
+        </div>
+      </div>
+
+      <div className="head-actions">
+        <button className="ghost-btn" onClick={onTweaks}><Icon.Sliders/> TWEAKS</button>
+        <button className="primary-btn" onClick={onNewFile}><Icon.Plus/> NEW FILE</button>
+      </div>
+    </header>
+  )
+}
+
+function MetaBar({ company, setCompany, refId, setRefId, filledCount, total }) {
+  return (
+    <div className="metabar">
+      <div className="meta-field">
+        <label>COMPANY</label>
+        <input
+          type="text"
+          placeholder="e.g. NORTHGATE DIESEL"
+          value={company}
+          onChange={(e) => setCompany(e.target.value.toUpperCase())}
+          spellCheck={false}
+        />
+      </div>
+      <div className="meta-field">
+        <label>REF / ID</label>
+        <input
+          type="text"
+          placeholder="e.g. WO-2026-04-081"
+          value={refId}
+          onChange={(e) => setRefId(e.target.value.toUpperCase())}
+          spellCheck={false}
+        />
+      </div>
+      <div className="meta-stat">
+        <span className="k">FILE</span>
+        <span className="v">{company && refId ? `${company} · ${refId}` : <em className="em">— awaiting input —</em>}</span>
+      </div>
+    </div>
+  )
+}
+
+function SlotGrid({ slots, layout, showPreview, trimDigits, onTapSlot, onCopy, onClear, copied }) {
+  return (
+    <div className={`grid grid-${layout} grid-n-${slots.length}`}>
+      {slots.map((slot, i) => (
+        <Slot
+          key={slot.id}
+          index={i}
+          slot={slot}
+          showPreview={showPreview}
+          trimDigits={trimDigits}
+          onTap={() => onTapSlot(i)}
+          onCopy={() => onCopy(i)}
+          onClear={() => onClear(i)}
+          copied={copied && copied.type === 'slot' && copied.key === i}
+        />
+      ))}
+    </div>
+  )
+}
+
+function Slot({ index, slot, showPreview, trimDigits, onTap, onCopy, onClear, copied }) {
+  const tag = String(index + 1).padStart(2, '0')
+  const trimmed = slot.code ? trimRight(slot.code, trimDigits) : null
+  const filled = !!slot.code
+
+  return (
+    <div className={`slot ${filled ? 'is-filled' : 'is-empty'}`}>
+      <div className="slot-tag">
+        <span className="t-num">{tag}</span>
+        {filled ? <span className="t-state ok">● SCANNED</span> : <span className="t-state">○ EMPTY</span>}
+        {filled && <button className="slot-clear" onClick={onClear} title="Clear slot"><Icon.X size={11}/></button>}
+      </div>
+
+      <button className="slot-body" onClick={onTap}>
+        {filled ? (
+          <>
+            <div className="slot-code">{trimmed}</div>
+            <div className="slot-full">{slot.code}</div>
+            {showPreview && (
+              <div className="slot-preview">
+                <BarcodePreview value={slot.code} width={220} height={36}/>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="slot-empty-inner">
+            <div className="slot-icon"><Icon.Scan size={44}/></div>
+            <div className="slot-cta">TAP TO SCAN</div>
+            <div className="slot-hint">camera → injector code</div>
+          </div>
+        )}
+      </button>
+
+      <button className={`slot-copy ${!filled ? 'disabled' : ''} ${copied ? 'copied' : ''}`} disabled={!filled} onClick={onCopy}>
+        {copied
+          ? (<><Icon.Check/> COPIED</>)
+          : (<><Icon.Copy/> COPY {filled ? `· ${trimmed}` : ''}</>)
+        }
+      </button>
+    </div>
+  )
+}
+
+function ActionBar({ onCopyAll, onSave, filledCount, total, copied, readyToSave }) {
+  const copiedAll = copied && copied.type === 'all'
+  return (
+    <div className="actionbar">
+      <button className="ghost-btn big" onClick={onCopyAll} disabled={filledCount === 0}>
+        {copiedAll ? (<><Icon.Check/> ALL COPIED</>) : (<><Icon.Copy/> COPY ALL ({filledCount})</>)}
+      </button>
+
+      <div className="ab-spacer">
+        {!readyToSave && filledCount === 0 && <span className="hint">scan at least one code to save</span>}
+        {!readyToSave && filledCount > 0 && <span className="hint warn">enter company + ref / id to enable save</span>}
+        {readyToSave && <span className="hint ok">ready — saves to ~/Documents/trimcodes/</span>}
+      </div>
+
+      <button className={`save-btn ${readyToSave ? 'is-ready' : ''}`} onClick={onSave} disabled={!readyToSave}>
+        <span className="sv-inner">
+          <Icon.Download size={16}/> SAVE FILE
+        </span>
+        <span className="sv-meta">{filledCount}/{total} · .txt</span>
+      </button>
+    </div>
+  )
+}
+
+function Sidebar({ savedFiles, onRedownload }) {
+  return (
+    <aside className="sidebar">
+      <div className="side-head">
+        <span><Icon.Folder/> SAVED FILES</span>
+        <span className="side-count">{savedFiles.length}</span>
+      </div>
+      {savedFiles.length === 0 && (
+        <div className="side-empty">
+          <div className="se-icon"><Icon.Folder size={26}/></div>
+          <div className="se-title">NO FILES YET</div>
+          <div className="se-hint">Saved .txt files will appear here<br/>and in ~/Documents/trimcodes/</div>
+        </div>
+      )}
+      <div className="side-list">
+        {savedFiles.map((rec) => (
+          <div key={rec.id} className="side-item" onClick={() => onRedownload(rec)}>
+            <div className="si-num">#{String(rec.n).padStart(3, '0')}</div>
+            <div className="si-main">
+              <div className="si-title">{rec.company} <span className="sep">·</span> {rec.refId}</div>
+              <div className="si-meta">{rec.count} codes <span className="sep">·</span> {rec.stamp}</div>
+              <div className="si-file">{rec.filename}</div>
+            </div>
+            <div className="si-dl"><Icon.Download size={14}/></div>
+          </div>
+        ))}
+      </div>
+      <div className="side-foot">
+        <div className="sf-row"><span className="k">DIR</span><span className="v">~/Documents/trimcodes/</span></div>
+        <div className="sf-row"><span className="k">FMT</span><span className="v">.txt · plain</span></div>
+      </div>
+    </aside>
+  )
+}
