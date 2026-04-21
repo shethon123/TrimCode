@@ -105,6 +105,7 @@ export default function App() {
       stamp: nowStamp(),
       count: filled.length,
       body,
+      slots,
     }
     setSavedFiles((prev) => [record, ...prev].slice(0, 40))
     showToast(`Saved → ${filename}`)
@@ -114,6 +115,30 @@ export default function App() {
     const result = await window.electronAPI.saveFile(rec.filename, rec.body)
     if (result.success) showToast(`Re-saved → ${rec.filename}`)
     else showToast(`Re-save failed: ${result.error}`)
+  }
+
+  const openFile = (rec) => {
+    if (slots.some(s => s.code)) {
+      if (!confirm('Load this file? Current unsaved scans will be replaced.')) return
+    }
+    setCompany(rec.company)
+    setRefId(rec.refId)
+    if (rec.slots) {
+      setSlots(rec.slots)
+    } else {
+      const lines = rec.body.split('\n').slice(1)
+      const count = Math.max(tweaks.slotCount, lines.length)
+      const next = EMPTY_SLOTS(count)
+      lines.forEach(line => {
+        const match = line.match(/^(\d+)\s+(.+)$/)
+        if (match) {
+          const idx = parseInt(match[1], 10) - 1
+          if (idx >= 0 && idx < next.length) next[idx] = { ...next[idx], code: match[2].trim(), scannedAt: Date.now() }
+        }
+      })
+      setSlots(next)
+    }
+    showToast(`Opened ${rec.filename}`)
   }
 
   const showToast = (msg) => {
@@ -162,7 +187,7 @@ export default function App() {
           />
         </section>
 
-        <Sidebar savedFiles={savedFiles} onRedownload={redownload} />
+        <Sidebar savedFiles={savedFiles} onOpen={openFile} onRedownload={redownload} />
       </main>
 
       {scanning !== null && (
@@ -334,7 +359,7 @@ function ActionBar({ onCopyAll, onSave, filledCount, total, copied, readyToSave 
   )
 }
 
-function Sidebar({ savedFiles, onRedownload }) {
+function Sidebar({ savedFiles, onOpen, onRedownload }) {
   return (
     <aside className="sidebar">
       <div className="side-head">
@@ -350,14 +375,14 @@ function Sidebar({ savedFiles, onRedownload }) {
       )}
       <div className="side-list">
         {savedFiles.map((rec) => (
-          <div key={rec.id} className="side-item" onClick={() => onRedownload(rec)}>
+          <div key={rec.id} className="side-item" onClick={() => onOpen(rec)}>
             <div className="si-num">#{String(rec.n).padStart(3, '0')}</div>
             <div className="si-main">
               <div className="si-title">{rec.company} <span className="sep">·</span> {rec.refId}</div>
               <div className="si-meta">{rec.count} codes <span className="sep">·</span> {rec.stamp}</div>
               <div className="si-file">{rec.filename}</div>
             </div>
-            <div className="si-dl"><Icon.Download size={14}/></div>
+            <div className="si-dl" onClick={(e) => { e.stopPropagation(); onRedownload(rec) }}><Icon.Download size={14}/></div>
           </div>
         ))}
       </div>
