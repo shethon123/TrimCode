@@ -27,7 +27,7 @@ export default function ScanModal({ slotIndex, onComplete, onCancel, showPreview
     const onKey = (e) => {
       if (e.key === 'Escape') { onCancel(); return }
       if (phase === 'found') {
-        if (e.key === 'Enter') onComplete(code)
+        if (e.key === 'Enter') { e.preventDefault(); onComplete(code) }
         return
       }
       if (e.key === 'Enter') {

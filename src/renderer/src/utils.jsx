@@ -41,7 +41,7 @@ export function formatFileContent(slots, trimDigits) {
   let n = 1
   for (const slot of slots) {
     if (slot.code) {
-      lines.push(`${n} ${trimRight(slot.code, trimDigits)}`)
+      lines.push(`${n} ${slot.code}`)
       n++
     }
   }

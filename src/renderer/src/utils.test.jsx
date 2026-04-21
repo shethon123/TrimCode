@@ -38,12 +38,11 @@ describe('formatFileContent', () => {
     expect(lines).toHaveLength(3)
   })
 
-  it('applies trimRight to codes longer than trimDigits', () => {
+  it('saves the full raw code regardless of trimDigits', () => {
     const slots = [{ id: '1', code: 'BOSCH-0445120123-7N91', scannedAt: Date.now() }]
     const content = formatFileContent(slots, 4)
     const lines = content.split('\n')
-    // last 4 chars of 'BOSCH-0445120123-7N91' = '7N91'
-    expect(lines[1]).toBe('1 7N91')
+    expect(lines[1]).toBe('1 BOSCH-0445120123-7N91')
   })
 
   it('returns only timestamp line when all slots are empty', () => {

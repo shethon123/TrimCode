@@ -303,7 +303,7 @@ function Slot({ index, slot, showPreview, trimDigits, onTap, onCopy, onClear, co
       <button className={`slot-copy ${!filled ? 'disabled' : ''} ${copied ? 'copied' : ''}`} disabled={!filled} onClick={onCopy}>
         {copied
           ? (<><Icon.Check/> COPIED</>)
-          : (<><Icon.Copy/> COPY {filled ? `· ${trimmed}` : ''}</>)
+          : (<><Icon.Copy/> COPY</>)
         }
       </button>
     </div>
