@@ -59,7 +59,7 @@ export default function App() {
   const copySlot = (i) => {
     const s = slots[i]
     if (!s.code) return
-    navigator.clipboard.writeText(trimRight(s.code, tweaks.trimDigits)).catch(() => {})
+    navigator.clipboard.writeText(s.code).catch(() => {})
     setCopied({ type: 'slot', key: i })
     setTimeout(() => setCopied(null), 1400)
   }
