@@ -16,6 +16,7 @@ export default function App() {
   const [savedFiles, setSavedFiles] = useState([])
   const [toast, setToast] = useState(null)
   const [overwritePending, setOverwritePending] = useState(null)
+  const [newFilePending, setNewFilePending] = useState(false)
   const fileCounter = useRef(1)
 
   useEffect(() => { document.body.dataset.theme = tweaks.theme }, [tweaks.theme])
@@ -81,8 +82,14 @@ export default function App() {
 
   const newFile = () => {
     if (slots.some(s => s.code)) {
-      if (!confirm('Start a new file? Current unsaved scans will be cleared.')) return
+      setNewFilePending(true)
+      return
     }
+    confirmNewFile()
+  }
+
+  const confirmNewFile = () => {
+    setNewFilePending(false)
     setSlots(EMPTY_SLOTS(tweaks.slotCount))
     setCompany('')
     setRefId('')
@@ -224,6 +231,13 @@ export default function App() {
           filename={overwritePending.filename}
           onConfirm={confirmOverwrite}
           onCancel={() => setOverwritePending(null)}
+        />
+      )}
+
+      {newFilePending && (
+        <NewFileModal
+          onConfirm={confirmNewFile}
+          onCancel={() => setNewFilePending(false)}
         />
       )}
 
@@ -437,6 +451,30 @@ function OverwriteModal({ filename, onConfirm, onCancel }) {
         <div className="modal-foot">
           <button className="ghost-btn" onClick={onCancel}>CANCEL</button>
           <button className="primary-btn" onClick={onConfirm}>OVERWRITE</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function NewFileModal({ onConfirm, onCancel }) {
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <span className="modal-label">
+            <span className="dot dot-warn" />
+            START NEW FILE
+          </span>
+        </div>
+        <div className="modal-body">
+          <div className="ow-msg">All current scans will be cleared:</div>
+          <div className="ow-filename">Company · Ref/ID · All slot data</div>
+          <div className="ow-sub">Unsaved scans will be lost.</div>
+        </div>
+        <div className="modal-foot">
+          <button className="ghost-btn" onClick={onCancel}>CANCEL</button>
+          <button className="primary-btn" onClick={onConfirm}>NEW FILE</button>
         </div>
       </div>
     </div>
