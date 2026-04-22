@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain } from 'electron/main'
 import { join } from 'path'
-import { mkdirSync, writeFileSync } from 'fs'
+import { mkdirSync, writeFileSync, existsSync } from 'fs'
 import { homedir } from 'os'
 
 const SAVE_DIR = join(homedir(), 'Documents', 'trimcodes')
@@ -42,4 +42,8 @@ ipcMain.handle('save-file', (_event, { filename, content }) => {
   } catch (error) {
     return { success: false, error: error.message }
   }
+})
+
+ipcMain.handle('file-exists', (_event, filename) => {
+  return existsSync(join(SAVE_DIR, filename))
 })
