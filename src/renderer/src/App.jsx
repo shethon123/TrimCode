@@ -386,7 +386,6 @@ function Sidebar({ savedFiles, onOpen, onRedownload, onDelete }) {
       <div className="side-list">
         {savedFiles.map((rec) => (
           <div key={rec.id} className="side-item" onClick={() => onOpen(rec)}>
-            <div className="si-num">#{String(rec.n).padStart(3, '0')}</div>
             <div className="si-main">
               <div className="si-title">{rec.company} <span className="sep">·</span> {rec.refId}</div>
               <div className="si-meta">{rec.count} codes <span className="sep">·</span> {rec.stamp}</div>

@@ -33,7 +33,7 @@ export default function TweaksPanel({ tweaks, setTweaks, open, onClose }) {
       <div className="tweak-row">
         <label>SLOTS</label>
         <div className="seg">
-          {[4, 6, 9].map(v => (
+          {[4, 6, 8].map(v => (
             <button key={v} className={tweaks.slotCount === v ? 'on' : ''} onClick={() => patch('slotCount', v)}>{v}</button>
           ))}
         </div>
