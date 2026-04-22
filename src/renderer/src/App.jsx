@@ -468,9 +468,7 @@ function NewFileModal({ onConfirm, onCancel }) {
           </span>
         </div>
         <div className="modal-body">
-          <div className="ow-msg">All current scans will be cleared:</div>
-          <div className="ow-filename">Company · Ref/ID · All slot data</div>
-          <div className="ow-sub">Unsaved scans will be lost.</div>
+          <div className="ow-msg">All data will be cleared.</div>
         </div>
         <div className="modal-foot">
           <button className="ghost-btn" onClick={onCancel}>CANCEL</button>
