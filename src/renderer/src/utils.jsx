@@ -40,13 +40,9 @@ export function buildFilename(company, refId) {
 
 export function formatFileContent(slots, trimDigits) {
   const lines = [`[${nowStampFile()}]`]
-  let n = 1
-  for (const slot of slots) {
-    if (slot.code) {
-      lines.push(`${n} ${slot.code}`)
-      n++
-    }
-  }
+  slots.forEach((slot, i) => {
+    lines.push(slot.code ? `${i + 1} ${slot.code}` : `${i + 1} `)
+  })
   return lines.join('\n')
 }
 

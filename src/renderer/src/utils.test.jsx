@@ -25,7 +25,7 @@ describe('formatFileContent', () => {
     expect(content.split('\n')[0]).toBe('[04-20-2026 12:33 PM]')
   })
 
-  it('numbers filled slots sequentially and skips empty slots', () => {
+  it('writes all slot positions, empty slots get number with trailing space', () => {
     const slots = [
       { id: '1', code: 'ABCDEF', scannedAt: Date.now() },
       { id: '2', code: null, scannedAt: null },
@@ -34,8 +34,9 @@ describe('formatFileContent', () => {
     const content = formatFileContent(slots, 6)
     const lines = content.split('\n')
     expect(lines[1]).toBe('1 ABCDEF')
-    expect(lines[2]).toBe('2 GHIJKL')
-    expect(lines).toHaveLength(3)
+    expect(lines[2]).toBe('2 ')
+    expect(lines[3]).toBe('3 GHIJKL')
+    expect(lines).toHaveLength(4)
   })
 
   it('saves the full raw code regardless of trimDigits', () => {
@@ -45,13 +46,15 @@ describe('formatFileContent', () => {
     expect(lines[1]).toBe('1 BOSCH-0445120123-7N91')
   })
 
-  it('returns only timestamp line when all slots are empty', () => {
+  it('writes all slot positions with trailing space when all slots are empty', () => {
     const slots = [
       { id: '1', code: null, scannedAt: null },
       { id: '2', code: null, scannedAt: null },
     ]
     const content = formatFileContent(slots, 6)
-    expect(content.split('\n')).toHaveLength(1)
-    expect(content).toBe('[04-20-2026 12:33 PM]')
+    const lines = content.split('\n')
+    expect(lines).toHaveLength(3)
+    expect(lines[1]).toBe('1 ')
+    expect(lines[2]).toBe('2 ')
   })
 })
