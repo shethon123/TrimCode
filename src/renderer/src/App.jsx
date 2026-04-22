@@ -15,6 +15,7 @@ export default function App() {
   const [copied, setCopied] = useState(null)
   const [savedFiles, setSavedFiles] = useState([])
   const [toast, setToast] = useState(null)
+  const [overwritePending, setOverwritePending] = useState(null)
   const fileCounter = useRef(1)
 
   useEffect(() => { document.body.dataset.theme = tweaks.theme }, [tweaks.theme])
@@ -95,36 +96,24 @@ export default function App() {
 
     const filename = buildFilename(company, refId)
     const body = formatFileContent(slots, tweaks.trimDigits)
-    const result = await window.electronAPI.saveFile(filename, body)
 
-    if (!result.success) {
-      showToast(`Save failed: ${result.error}`)
+    const exists = await window.electronAPI.fileExists(filename)
+    if (exists) {
+      setOverwritePending({ filename, body })
       return
     }
 
-    const record = {
-      id: uid(),
-      n: fileCounter.current++,
-      filename,
-      company,
-      refId,
-      stamp: nowStamp(),
-      count: filled.length,
-      body,
-      slots,
-    }
-    setSavedFiles((prev) => [record, ...prev].slice(0, 40))
-    showToast(`Saved → ${filename}`)
+    await persistSave(filename, body)
+  }
+
+  const confirmOverwrite = async () => {
+    const { filename, body } = overwritePending
+    setOverwritePending(null)
+    await persistSave(filename, body)
   }
 
   const deleteFile = (rec) => {
     setSavedFiles((prev) => prev.filter(f => f.id !== rec.id))
-  }
-
-  const redownload = async (rec) => {
-    const result = await window.electronAPI.saveFile(rec.filename, rec.body)
-    if (result.success) showToast(`Re-saved → ${rec.filename}`)
-    else showToast(`Re-save failed: ${result.error}`)
   }
 
   const openFile = (rec) => {
@@ -154,6 +143,25 @@ export default function App() {
   const showToast = (msg) => {
     setToast({ msg, key: uid() })
     setTimeout(() => setToast((t) => t && t.msg === msg ? null : t), 2600)
+  }
+
+  const persistSave = async (filename, body) => {
+    const result = await window.electronAPI.saveFile(filename, body)
+    if (!result.success) { showToast(`Save failed: ${result.error}`); return }
+    const filled = slots.filter(s => s.code)
+    const record = {
+      id: uid(),
+      n: fileCounter.current++,
+      filename,
+      company,
+      refId,
+      stamp: nowStamp(),
+      count: filled.length,
+      body,
+      slots,
+    }
+    setSavedFiles((prev) => [record, ...prev].slice(0, 40))
+    showToast(`Saved → ${filename}`)
   }
 
   const filledCount = slots.filter(s => s.code).length
@@ -197,7 +205,7 @@ export default function App() {
           />
         </section>
 
-        <Sidebar savedFiles={savedFiles} onOpen={openFile} onRedownload={redownload} onDelete={deleteFile} />
+        <Sidebar savedFiles={savedFiles} onOpen={openFile} onDelete={deleteFile} />
       </main>
 
       {scanning !== null && (
@@ -208,6 +216,14 @@ export default function App() {
           beepOnScan={tweaks.beepOnScan}
           onComplete={completeScan}
           onCancel={() => setScanning(null)}
+        />
+      )}
+
+      {overwritePending && (
+        <OverwriteModal
+          filename={overwritePending.filename}
+          onConfirm={confirmOverwrite}
+          onCancel={() => setOverwritePending(null)}
         />
       )}
 
@@ -369,7 +385,7 @@ function ActionBar({ onCopyAll, onSave, filledCount, total, copied, readyToSave 
   )
 }
 
-function Sidebar({ savedFiles, onOpen, onRedownload, onDelete }) {
+function Sidebar({ savedFiles, onOpen, onDelete }) {
   return (
     <aside className="sidebar">
       <div className="side-head">
@@ -391,7 +407,6 @@ function Sidebar({ savedFiles, onOpen, onRedownload, onDelete }) {
               <div className="si-meta">{rec.count} codes <span className="sep">·</span> {rec.stamp}</div>
               <div className="si-file">{rec.filename}</div>
             </div>
-            <div className="si-dl" onClick={(e) => { e.stopPropagation(); onRedownload(rec) }}><Icon.Download size={14}/></div>
             <div className="si-del" onClick={(e) => { e.stopPropagation(); onDelete(rec) }}><Icon.X size={12}/></div>
           </div>
         ))}
@@ -401,5 +416,29 @@ function Sidebar({ savedFiles, onOpen, onRedownload, onDelete }) {
         <div className="sf-row"><span className="k">FMT</span><span className="v">.txt · plain</span></div>
       </div>
     </aside>
+  )
+}
+
+function OverwriteModal({ filename, onConfirm, onCancel }) {
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <span className="modal-label">
+            <span className="dot dot-warn" />
+            FILE ALREADY EXISTS
+          </span>
+        </div>
+        <div className="modal-body">
+          <div className="ow-msg">A file with this name already exists on disk:</div>
+          <div className="ow-filename">{filename}</div>
+          <div className="ow-sub">Saving will replace it with the current scan data.</div>
+        </div>
+        <div className="modal-foot">
+          <button className="ghost-btn" onClick={onCancel}>CANCEL</button>
+          <button className="primary-btn" onClick={onConfirm}>OVERWRITE</button>
+        </div>
+      </div>
+    </div>
   )
 }
