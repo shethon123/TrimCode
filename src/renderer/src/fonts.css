@@ -1,0 +1,44 @@
+/* Trim Code — local, offline-first font bundle.
+   Files sourced from Google Fonts (OFL-licensed), bundled under
+   ../../../assets/fonts/. No CDN requests at runtime. */
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('../../../assets/fonts/jetbrains-mono/jetbrains-mono-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('../../../assets/fonts/jetbrains-mono/jetbrains-mono-500.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('../../../assets/fonts/jetbrains-mono/jetbrains-mono-700.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Space Grotesk';
+  src: url('../../../assets/fonts/space-grotesk/space-grotesk-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Space Grotesk';
+  src: url('../../../assets/fonts/space-grotesk/space-grotesk-500.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-ui: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+}

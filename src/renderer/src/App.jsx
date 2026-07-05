@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { TWEAK_DEFAULTS, uid, nowStamp, trimRight, BarcodePreview, Icon, buildFilename, formatFileContent } from './utils'
-import ScanModal from './ScanModal'
+import { TWEAK_DEFAULTS, FONT_STACKS, uid, nowStamp, trimRight, beep, BarcodePreview, Icon, buildFilename, formatFileContent } from './utils'
 import TweaksPanel from './Tweaks'
+
+const FLASH_MS = 250
 
 const EMPTY_SLOTS = (n) => Array.from({ length: n }, () => ({ id: uid(), code: null, scannedAt: null }))
 
@@ -12,6 +13,9 @@ export default function App() {
   const [refId, setRefId] = useState('')
   const [slots, setSlots] = useState(EMPTY_SLOTS(TWEAK_DEFAULTS.slotCount))
   const [scanning, setScanning] = useState(null)
+  const [decodeBuffer, setDecodeBuffer] = useState('')
+  const [flickerChars, setFlickerChars] = useState('')
+  const [flashSlot, setFlashSlot] = useState(null)
   const [copied, setCopied] = useState(null)
   const [savedFiles, setSavedFiles] = useState([])
   const [toast, setToast] = useState(null)
@@ -20,6 +24,22 @@ export default function App() {
   const fileCounter = useRef(1)
 
   useEffect(() => { document.body.dataset.theme = tweaks.theme }, [tweaks.theme])
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--font-ui', FONT_STACKS.ui[tweaks.uiFont])
+    document.documentElement.style.setProperty('--font-mono', FONT_STACKS.code[tweaks.codeFont])
+  }, [tweaks.uiFont, tweaks.codeFont])
+
+  useEffect(() => {
+    if (scanning === null) { setFlickerChars(''); return }
+    const pool = 'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789-'
+    const id = setInterval(() => {
+      let s = ''
+      for (let i = 0; i < 14; i++) s += pool[Math.floor(Math.random() * pool.length)]
+      setFlickerChars(s)
+    }, 90)
+    return () => clearInterval(id)
+  }, [scanning])
 
   useEffect(() => {
     setSlots((prev) => {
@@ -47,20 +67,34 @@ export default function App() {
     localStorage.setItem('trimcode:session', JSON.stringify(data))
   }, [company, refId, slots, savedFiles])
 
-  const completeScan = (code) => {
-    if (scanning === null) return
-    const idx = scanning
-    setSlots((prev) => prev.map((s, i) => i === idx ? { ...s, code, scannedAt: Date.now() } : s))
+  const activateScan = (index) => {
+    if (slots[index].code) return
+    setSlots((prev) => prev.map((s, i) => i === index ? { id: uid(), code: null, scannedAt: null } : s))
+    setScanning(index)
+    setDecodeBuffer('')
+  }
+
+  const cancelScan = () => setScanning(null)
+
+  const commitScan = (index, code) => {
+    const updated = slots.map((s, i) => i === index ? { ...s, code, scannedAt: Date.now() } : s)
+    setSlots(updated)
     setScanning(null)
+    setDecodeBuffer('')
+    if (tweaks.beepOnScan) beep(1200, 0.09)
+
+    setFlashSlot(index)
+    setTimeout(() => setFlashSlot((f) => (f === index ? null : f)), FLASH_MS)
+
     if (tweaks.autoCopy) {
       navigator.clipboard.writeText(trimRight(code, tweaks.trimDigits)).catch(() => {})
       showToast('Auto-copied to clipboard')
     }
+
     if (tweaks.autoAdvance) {
-      const updated = slots.map((s, i) => i === idx ? { ...s, code } : s)
-      let next = updated.findIndex((s, i) => i > idx && !s.code)
+      let next = updated.findIndex((s, i) => i > index && !s.code)
       if (next === -1) next = updated.findIndex(s => !s.code)
-      if (next !== -1) setTimeout(() => setScanning(next), 50)
+      if (next !== -1) setTimeout(() => activateScan(next), FLASH_MS)
     }
   }
 
@@ -69,7 +103,7 @@ export default function App() {
     if (!s.code) return
     navigator.clipboard.writeText(s.code).catch(() => {})
     setCopied({ type: 'slot', key: i })
-    setTimeout(() => setCopied(null), 1400)
+    setTimeout(() => setCopied(null), 1200)
   }
 
   const copyAll = () => {
@@ -77,7 +111,7 @@ export default function App() {
     if (!lines.length) return
     navigator.clipboard.writeText(lines.join('\n')).catch(() => {})
     setCopied({ type: 'all', key: 'all' })
-    setTimeout(() => setCopied(null), 1400)
+    setTimeout(() => setCopied(null), 1200)
   }
 
   const newFile = () => {
@@ -174,6 +208,44 @@ export default function App() {
   const filledCount = slots.filter(s => s.code).length
   const readyToSave = company.trim() && refId.trim() && filledCount > 0
 
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (scanning !== null) {
+        if (e.key === 'Escape') { e.preventDefault(); cancelScan(); return }
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          const code = decodeBuffer.trim()
+          if (code) commitScan(scanning, code)
+          return
+        }
+        if (e.key === 'Backspace') { setDecodeBuffer((b) => b.slice(0, -1)); return }
+        if (e.key.length === 1) { setDecodeBuffer((b) => b + e.key) }
+        return
+      }
+
+      if (overwritePending || newFilePending) return
+      const tag = document.activeElement && document.activeElement.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+
+      if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        saveFile()
+        return
+      }
+      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'c') {
+        e.preventDefault()
+        copyAll()
+        return
+      }
+      if (/^[1-9]$/.test(e.key)) {
+        const idx = parseInt(e.key, 10) - 1
+        if (idx < slots.length && !slots[idx].code) activateScan(idx)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [scanning, decodeBuffer, overwritePending, newFilePending, slots, company, refId, tweaks, savedFiles])
+
   return (
     <div className={`app layout-${tweaks.layout}`}>
       <Header
@@ -185,22 +257,28 @@ export default function App() {
 
       <main className="main">
         <section className="scan-area">
-          <MetaBar
-            company={company} setCompany={setCompany}
-            refId={refId} setRefId={setRefId}
-            filledCount={filledCount} total={slots.length}
-          />
+          <div className="scan-scroll">
+            <MetaBar
+              company={company} setCompany={setCompany}
+              refId={refId} setRefId={setRefId}
+              filledCount={filledCount} total={slots.length}
+            />
 
-          <SlotGrid
-            slots={slots}
-            layout={tweaks.layout}
-            showPreview={tweaks.showPreview}
-            trimDigits={tweaks.trimDigits}
-            onTapSlot={(i) => setScanning(i)}
-            onCopy={copySlot}
-            onClear={(i) => setSlots((prev) => prev.map((s, j) => j === i ? { id: uid(), code: null, scannedAt: null } : s))}
-            copied={copied}
-          />
+            <SlotGrid
+              slots={slots}
+              layout={tweaks.layout}
+              showPreview={tweaks.showPreview}
+              trimDigits={tweaks.trimDigits}
+              scanning={scanning}
+              decodeReadout={decodeBuffer || flickerChars}
+              flashSlot={flashSlot}
+              onActivate={activateScan}
+              onCancelScan={cancelScan}
+              onCopy={copySlot}
+              onClear={(i) => setSlots((prev) => prev.map((s, j) => j === i ? { id: uid(), code: null, scannedAt: null } : s))}
+              copied={copied}
+            />
+          </div>
 
           <ActionBar
             onCopyAll={copyAll}
@@ -214,17 +292,6 @@ export default function App() {
 
         <Sidebar savedFiles={savedFiles} onOpen={openFile} onDelete={deleteFile} />
       </main>
-
-      {scanning !== null && (
-        <ScanModal
-          slotIndex={scanning}
-          showPreview={tweaks.showPreview}
-          trimDigits={tweaks.trimDigits}
-          beepOnScan={tweaks.beepOnScan}
-          onComplete={completeScan}
-          onCancel={() => setScanning(null)}
-        />
-      )}
 
       {overwritePending && (
         <OverwriteModal
@@ -312,7 +379,7 @@ function MetaBar({ company, setCompany, refId, setRefId, filledCount, total }) {
   )
 }
 
-function SlotGrid({ slots, layout, showPreview, trimDigits, onTapSlot, onCopy, onClear, copied }) {
+function SlotGrid({ slots, layout, showPreview, trimDigits, scanning, decodeReadout, flashSlot, onActivate, onCancelScan, onCopy, onClear, copied }) {
   return (
     <div className={`grid grid-${layout} grid-n-${slots.length}`}>
       {slots.map((slot, i) => (
@@ -322,7 +389,11 @@ function SlotGrid({ slots, layout, showPreview, trimDigits, onTapSlot, onCopy, o
           slot={slot}
           showPreview={showPreview}
           trimDigits={trimDigits}
-          onTap={() => onTapSlot(i)}
+          active={scanning === i}
+          decodeReadout={decodeReadout}
+          justFlashed={flashSlot === i}
+          onActivate={() => onActivate(i)}
+          onCancelScan={onCancelScan}
           onCopy={() => onCopy(i)}
           onClear={() => onClear(i)}
           copied={copied && copied.type === 'slot' && copied.key === i}
@@ -332,21 +403,68 @@ function SlotGrid({ slots, layout, showPreview, trimDigits, onTapSlot, onCopy, o
   )
 }
 
-function Slot({ index, slot, showPreview, trimDigits, onTap, onCopy, onClear, copied }) {
+function Slot({ index, slot, showPreview, trimDigits, active, decodeReadout, justFlashed, onActivate, onCancelScan, onCopy, onClear, copied }) {
   const tag = String(index + 1).padStart(2, '0')
   const trimmed = slot.code ? trimRight(slot.code, trimDigits) : null
   const filled = !!slot.code
+  const [confirmClear, setConfirmClear] = useState(false)
+  const confirmTimeout = useRef(null)
+
+  useEffect(() => () => clearTimeout(confirmTimeout.current), [])
+
+  const handleClearClick = () => {
+    setConfirmClear(true)
+    confirmTimeout.current = setTimeout(() => setConfirmClear(false), 2500)
+  }
+
+  const handleRemoveConfirm = () => {
+    clearTimeout(confirmTimeout.current)
+    setConfirmClear(false)
+    onClear()
+  }
+
+  const handleChipBlur = () => {
+    clearTimeout(confirmTimeout.current)
+    setConfirmClear(false)
+  }
 
   return (
-    <div className={`slot ${filled ? 'is-filled' : 'is-empty'}`}>
+    <div className={`slot ${filled ? 'is-filled' : 'is-empty'} ${active ? 'is-scanning' : ''}`}>
       <div className="slot-tag">
         <span className="t-num">{tag}</span>
-        {filled ? <span className="t-state ok">● SCANNED</span> : <span className="t-state">○ EMPTY</span>}
-        {filled && <button className="slot-clear" onClick={onClear} title="Clear slot"><Icon.X size={11}/></button>}
+        {active ? (
+          <span className="t-state scanning"><span className="pulse"/> SCANNING</span>
+        ) : filled ? (
+          <span className="t-state ok">● SCANNED</span>
+        ) : (
+          <span className="t-state">○ EMPTY</span>
+        )}
+        {!active && !filled && index < 9 && <span className="slot-key-hint">{index + 1}</span>}
+        {filled && !active && (
+          confirmClear ? (
+            <button className="slot-remove-chip" onClick={handleRemoveConfirm} onBlur={handleChipBlur} autoFocus>
+              REMOVE?
+            </button>
+          ) : (
+            <button className="slot-clear" onClick={handleClearClick} title="Clear slot">
+              <Icon.X size={14}/>
+            </button>
+          )
+        )}
       </div>
 
-      <button className="slot-body" onClick={onTap}>
-        {filled ? (
+      <button
+        className={`slot-body ${active ? 'scanning' : ''} ${justFlashed ? 'just-scanned' : ''}`}
+        onClick={active ? onCancelScan : (filled ? undefined : onActivate)}
+      >
+        {active ? (
+          <div className="scan-zone">
+            <span className="scan-corner tl"/><span className="scan-corner tr"/>
+            <span className="scan-corner bl"/><span className="scan-corner br"/>
+            <span className="scan-line"/>
+            <div className="scan-readout">{decodeReadout}</div>
+          </div>
+        ) : filled ? (
           <>
             <div className="slot-code">{trimmed}</div>
             <div className="slot-full">{slot.code}</div>
@@ -379,7 +497,7 @@ function ActionBar({ onCopyAll, onSave, filledCount, total, copied, readyToSave 
   const copiedAll = copied && copied.type === 'all'
   return (
     <div className="actionbar">
-      <button className="ghost-btn big" onClick={onCopyAll} disabled={filledCount === 0}>
+      <button className={`ghost-btn big ${copiedAll ? 'copied' : ''}`} onClick={onCopyAll} disabled={filledCount === 0}>
         {copiedAll ? (<><Icon.Check/> ALL COPIED</>) : (<><Icon.Copy/> COPY ALL ({filledCount})</>)}
       </button>
 

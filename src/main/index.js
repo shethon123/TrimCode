@@ -12,7 +12,9 @@ function ensureSaveDir() {
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
-    height: 900,
+    height: 1050,
+    minWidth: 900,
+    minHeight: 750,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,

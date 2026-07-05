@@ -21,11 +21,29 @@ export default function TweaksPanel({ tweaks, setTweaks, open, onClose }) {
         </div>
       </div>
 
-      <div className="tweak-row">
+      <div className="tweak-row stacked">
         <label>THEME</label>
         <div className="seg">
-          {[{k:'light',l:'LIGHT'},{k:'paper',l:'PAPER'},{k:'terminal',l:'TERMINAL'},{k:'blueprint',l:'BLUEPRINT'}].map(v => (
+          {[{k:'light',l:'LIGHT'},{k:'paper',l:'PAPER'},{k:'blueprint',l:'BLUEPRINT'}].map(v => (
             <button key={v.k} className={tweaks.theme === v.k ? 'on' : ''} onClick={() => patch('theme', v.k)}>{v.l}</button>
+          ))}
+        </div>
+      </div>
+
+      <div className="tweak-row">
+        <label>UI FONT</label>
+        <select className="font-select" value={tweaks.uiFont} onChange={(e) => patch('uiFont', e.target.value)}>
+          <option value="space-grotesk">SPACE GROTESK</option>
+          <option value="jetbrains-mono">JETBRAINS MONO</option>
+          <option value="system-sans">SYSTEM SANS</option>
+        </select>
+      </div>
+
+      <div className="tweak-row stacked">
+        <label>CODE FONT</label>
+        <div className="seg">
+          {[{k:'jetbrains-mono',l:'JETBRAINS MONO'},{k:'system-mono',l:'SYSTEM MONO'}].map(v => (
+            <button key={v.k} className={tweaks.codeFont === v.k ? 'on' : ''} onClick={() => patch('codeFont', v.k)}>{v.l}</button>
           ))}
         </div>
       </div>

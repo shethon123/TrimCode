@@ -10,6 +10,20 @@ export const TWEAK_DEFAULTS = {
   beepOnScan: true,
   autoAdvance: false,
   slotCount: 6,
+  uiFont: 'space-grotesk',
+  codeFont: 'jetbrains-mono',
+}
+
+export const FONT_STACKS = {
+  ui: {
+    'space-grotesk': "'Space Grotesk', ui-sans-serif, system-ui, sans-serif",
+    'jetbrains-mono': "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace",
+    'system-sans': 'ui-sans-serif, system-ui, sans-serif',
+  },
+  code: {
+    'jetbrains-mono': "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace",
+    'system-mono': 'ui-monospace, "SF Mono", Menlo, monospace',
+  },
 }
 
 export const uid = () => Math.random().toString(36).slice(2, 10)
