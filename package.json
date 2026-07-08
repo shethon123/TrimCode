@@ -7,6 +7,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "build:win": "electron-vite build && electron-builder --win --x64",
+    "build:linux": "electron-vite build && electron-builder --linux --x64",
     "preview": "electron-vite preview",
     "test": "vitest run"
   },
@@ -34,6 +35,13 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "build/icon.ico",
+      "category": "Utility"
     }
   },
   "devDependencies": {
