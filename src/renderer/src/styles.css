@@ -395,7 +395,7 @@ body[data-theme="paper"] .primary-btn { color: #faf6ec; }
   font-family: var(--font-mono);
   font-size: 45px;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--fg);
   letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
   line-height: 1;

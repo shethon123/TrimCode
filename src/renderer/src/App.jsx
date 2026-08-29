@@ -536,7 +536,7 @@ function Sidebar({ savedFiles, onOpen, onDelete }) {
           <div key={rec.id} className="side-item" onClick={() => onOpen(rec)}>
             <div className="si-main">
               <div className="si-title">{rec.company} <span className="sep">·</span> {rec.refId}</div>
-              <div className="si-meta">{rec.count} codes <span className="sep">·</span> {rec.stamp}</div>
+              <div className="si-meta">{rec.count} codes</div>
               <div className="si-file">{rec.filename}</div>
             </div>
             <div className="si-del" onClick={(e) => { e.stopPropagation(); onDelete(rec) }}><Icon.X size={12}/></div>
