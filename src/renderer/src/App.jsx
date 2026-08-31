@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
-import { TWEAK_DEFAULTS, FONT_STACKS, uid, groupCode, trimRight, beep, QrPreview, Icon, buildFilename, formatFileContent, normalizeSearch } from './utils'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { TWEAK_DEFAULTS, FONT_STACKS, uid, groupCode, trimRight, beep, QrPreview, Icon, buildFilename, formatFileContent, parseCodeLines, normalizeSearch } from './utils'
 import TweaksPanel from './Tweaks'
 
 const FLASH_MS = 250
@@ -21,7 +21,8 @@ export default function App() {
   const [toast, setToast] = useState(null)
   const [overwritePending, setOverwritePending] = useState(null)
   const [newFilePending, setNewFilePending] = useState(false)
-  const fileCounter = useRef(1)
+  const [savedFilesError, setSavedFilesError] = useState(null)
+  const [trashPending, setTrashPending] = useState(null)
   const scanningRef = useRef(null)
   const decodeBufferRef = useRef('')
 
@@ -58,16 +59,32 @@ export default function App() {
         if (saved.company) setCompany(saved.company)
         if (saved.refId) setRefId(saved.refId)
         if (saved.slots && saved.slots.length) setSlots(saved.slots)
-        if (saved.savedFiles) setSavedFiles(saved.savedFiles)
-        if (saved.fileCounter) fileCounter.current = saved.fileCounter
       }
     } catch (e) {}
   }, [])
 
   useEffect(() => {
-    const data = { company, refId, slots, savedFiles, fileCounter: fileCounter.current }
+    const data = { company, refId, slots }
     localStorage.setItem('trimcode:session', JSON.stringify(data))
-  }, [company, refId, slots, savedFiles])
+  }, [company, refId, slots])
+
+  const applyUpdate = useCallback((res) => {
+    if (res && res.ok) {
+      setSavedFiles(res.files)
+      setSavedFilesError(null)
+    } else {
+      setSavedFilesError((res && res.error) || 'Could not read the trimcodes folder')
+    }
+  }, [])
+
+  const refreshSavedFiles = useCallback(() => {
+    window.electronAPI.listSavedFiles().then(applyUpdate)
+  }, [applyUpdate])
+
+  useEffect(() => {
+    refreshSavedFiles()
+    return window.electronAPI.onSavedFilesUpdate(applyUpdate)
+  }, [refreshSavedFiles, applyUpdate])
 
   const activateScan = (index) => {
     if (slots[index].code) return
@@ -162,32 +179,34 @@ export default function App() {
     await persistSave(filename, body)
   }
 
-  const deleteFile = (rec) => {
-    setSavedFiles((prev) => prev.filter(f => f.id !== rec.id))
+  const deleteFile = (rec) => setTrashPending(rec)
+
+  const confirmTrash = async () => {
+    const rec = trashPending
+    setTrashPending(null)
+    const res = await window.electronAPI.trashFile(rec.name)
+    if (!res.ok) showToast(`Trash failed: ${res.error}`)
   }
 
-  const openFile = (rec) => {
+  const openFile = async (rec) => {
     if (slots.some(s => s.code)) {
       if (!confirm('Load this file? Current unsaved scans will be replaced.')) return
     }
+    const res = await window.electronAPI.readSavedFile(rec.name)
+    if (!res.ok) { showToast(`Could not open ${rec.name}`); return }
+
+    const pairs = parseCodeLines(res.content)
+    const maxIdx = pairs.reduce((m, p) => Math.max(m, p.idx), -1)
+    const count = Math.max(tweaks.slotCount, maxIdx + 1)
+    const next = EMPTY_SLOTS(count)
+    pairs.forEach(({ idx, code }) => {
+      if (idx >= 0 && idx < next.length) next[idx] = { ...next[idx], code, scannedAt: Date.now() }
+    })
+
     setCompany(rec.company)
-    setRefId(rec.refId)
-    if (rec.slots) {
-      setSlots(rec.slots)
-    } else {
-      const lines = rec.body.split('\n').slice(1)
-      const count = Math.max(tweaks.slotCount, lines.length)
-      const next = EMPTY_SLOTS(count)
-      lines.forEach(line => {
-        const match = line.match(/^(\d+)\s+(.+)$/)
-        if (match) {
-          const idx = parseInt(match[1], 10) - 1
-          if (idx >= 0 && idx < next.length) next[idx] = { ...next[idx], code: match[2].trim(), scannedAt: Date.now() }
-        }
-      })
-      setSlots(next)
-    }
-    showToast(`Opened ${rec.filename}`)
+    setRefId(rec.hasHeader ? rec.refId : '')
+    setSlots(next)
+    showToast(`Opened ${rec.name}`)
   }
 
   const showToast = (msg) => {
@@ -198,18 +217,6 @@ export default function App() {
   const persistSave = async (filename, body) => {
     const result = await window.electronAPI.saveFile(filename, body)
     if (!result.success) { showToast(`Save failed: ${result.error}`); return }
-    const filled = slots.filter(s => s.code)
-    const record = {
-      id: uid(),
-      n: fileCounter.current++,
-      filename,
-      company,
-      refId,
-      count: filled.length,
-      body,
-      slots,
-    }
-    setSavedFiles((prev) => [record, ...prev].slice(0, 40))
     showToast(`Saved → ${filename}`)
   }
 
@@ -238,7 +245,7 @@ export default function App() {
         return
       }
 
-      if (overwritePending || newFilePending) return
+      if (overwritePending || newFilePending || trashPending) return
       const tag = document.activeElement && document.activeElement.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
 
@@ -259,7 +266,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [overwritePending, newFilePending, slots, company, refId, tweaks, savedFiles])
+  }, [overwritePending, newFilePending, trashPending, slots, company, refId, tweaks, savedFiles])
 
   return (
     <div className={`app layout-${tweaks.layout}`}>
@@ -305,7 +312,14 @@ export default function App() {
           />
         </section>
 
-        <Sidebar savedFiles={savedFiles} onOpen={openFile} onDelete={deleteFile} />
+        <Sidebar
+          savedFiles={savedFiles}
+          onOpen={openFile}
+          onDelete={deleteFile}
+          error={savedFilesError}
+          onRefresh={refreshSavedFiles}
+          onReveal={() => window.electronAPI.revealSaveDir()}
+        />
       </main>
 
       {overwritePending && (
@@ -320,6 +334,14 @@ export default function App() {
         <NewFileModal
           onConfirm={confirmNewFile}
           onCancel={() => setNewFilePending(false)}
+        />
+      )}
+
+      {trashPending && (
+        <ConfirmTrashModal
+          filename={trashPending.name}
+          onConfirm={confirmTrash}
+          onCancel={() => setTrashPending(null)}
         />
       )}
 
@@ -534,7 +556,7 @@ function ActionBar({ onCopyAll, onSave, filledCount, total, copied, readyToSave 
   )
 }
 
-function Sidebar({ savedFiles, onOpen, onDelete }) {
+function Sidebar({ savedFiles, onOpen, onDelete, error, onRefresh, onReveal }) {
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
   const inputRef = useRef(null)
@@ -554,7 +576,8 @@ function Sidebar({ savedFiles, onOpen, onDelete }) {
     if (!searching) return savedFiles
     return savedFiles.filter((rec) =>
       normalizeSearch(rec.company).includes(nq) ||
-      normalizeSearch(rec.refId).includes(nq)
+      normalizeSearch(rec.refId).includes(nq) ||
+      normalizeSearch(rec.name).includes(nq)
     )
   }, [savedFiles, nq, searching])
 
@@ -565,66 +588,81 @@ function Sidebar({ savedFiles, onOpen, onDelete }) {
         <span className="side-count">{savedFiles.length}</span>
       </div>
 
-      {savedFiles.length > 0 && (
-        <div className="side-search">
-          <input
-            ref={inputRef}
-            type="text"
-            className="side-search-input"
-            placeholder="Search company or ref/ID"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                e.preventDefault()
-                clearSearch()
-                listRef.current?.focus()
-              }
-            }}
-            spellCheck={false}
-          />
-          {query && (
-            <button
-              className="side-search-clear"
-              onClick={() => { clearSearch(); inputRef.current?.focus() }}
-              title="Clear search"
-            >
-              <Icon.X size={13}/>
-            </button>
-          )}
-        </div>
-      )}
-
-      {searching && savedFiles.length > 0 && (
-        <div className="side-result-count">{results.length} of {savedFiles.length} files</div>
-      )}
-
-      {savedFiles.length === 0 ? (
-        <div className="side-empty">
+      {error ? (
+        <div className="side-empty side-error">
           <div className="se-icon"><Icon.Folder size={26}/></div>
-          <div className="se-title">NO FILES YET</div>
-          <div className="se-hint">Saved .txt files will appear here<br/>and in ~/Documents/trimcodes/</div>
-        </div>
-      ) : searching && results.length === 0 ? (
-        <div className="side-empty">
-          <div className="se-icon"><Icon.Folder size={26}/></div>
-          <div className="se-title">NO MATCHES</div>
-          <div className="se-hint">{`No files match '${debounced}'`}</div>
-          <button className="ghost-btn" onClick={() => { clearSearch(); inputRef.current?.focus() }}>CLEAR SEARCH</button>
+          <div className="se-title">FOLDER UNAVAILABLE</div>
+          <div className="se-hint">{error}</div>
+          <button className="ghost-btn" onClick={onRefresh}>RETRY</button>
         </div>
       ) : (
-        <div className="side-list" ref={listRef} tabIndex={-1}>
-          {results.map((rec) => (
-            <div key={rec.id} className="side-item" onClick={() => onOpen(rec)}>
-              <div className="si-main">
-                <div className="si-title">{rec.company} <span className="sep">·</span> {rec.refId}</div>
-                <div className="si-meta">{rec.count} codes</div>
-                <div className="si-file">{rec.filename}</div>
-              </div>
-              <div className="si-del" onClick={(e) => { e.stopPropagation(); onDelete(rec) }}><Icon.X size={12}/></div>
+        <>
+          {savedFiles.length > 0 && (
+            <div className="side-search">
+              <input
+                ref={inputRef}
+                type="text"
+                className="side-search-input"
+                placeholder="Search company or ref/ID"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault()
+                    clearSearch()
+                    listRef.current?.focus()
+                  }
+                }}
+                spellCheck={false}
+              />
+              {query && (
+                <button
+                  className="side-search-clear"
+                  onClick={() => { clearSearch(); inputRef.current?.focus() }}
+                  title="Clear search"
+                >
+                  <Icon.X size={13}/>
+                </button>
+              )}
             </div>
-          ))}
-        </div>
+          )}
+
+          {searching && savedFiles.length > 0 && (
+            <div className="side-result-count">{results.length} of {savedFiles.length} files</div>
+          )}
+
+          {savedFiles.length === 0 ? (
+            <div className="side-empty">
+              <div className="se-icon"><Icon.Folder size={26}/></div>
+              <div className="se-title">NO FILES YET</div>
+              <div className="se-hint">Saved .txt files will appear here<br/>and in ~/Documents/trimcodes/</div>
+            </div>
+          ) : searching && results.length === 0 ? (
+            <div className="side-empty">
+              <div className="se-icon"><Icon.Folder size={26}/></div>
+              <div className="se-title">NO MATCHES</div>
+              <div className="se-hint">{`No files match '${debounced}'`}</div>
+              <button className="ghost-btn" onClick={() => { clearSearch(); inputRef.current?.focus() }}>CLEAR SEARCH</button>
+            </div>
+          ) : (
+            <div className="side-list" ref={listRef} tabIndex={-1}>
+              {results.map((rec) => (
+                <div key={rec.name} className="side-item" onClick={() => onOpen(rec)}>
+                  <div className="si-main">
+                    <div className="si-title">
+                      {rec.hasHeader
+                        ? <>{rec.company} <span className="sep">·</span> {rec.refId}</>
+                        : rec.name}
+                    </div>
+                    <div className="si-meta">{rec.count} codes</div>
+                    <div className="si-file">{rec.name}</div>
+                  </div>
+                  <div className="si-del" onClick={(e) => { e.stopPropagation(); onDelete(rec) }}><Icon.X size={12}/></div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       <div className="side-foot">
@@ -675,6 +713,29 @@ function NewFileModal({ onConfirm, onCancel }) {
         <div className="modal-foot">
           <button className="ghost-btn" onClick={onCancel}>CANCEL</button>
           <button className="primary-btn" onClick={onConfirm}>NEW FILE</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ConfirmTrashModal({ filename, onConfirm, onCancel }) {
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <span className="modal-label">
+            <span className="dot dot-warn" />
+            MOVE FILE TO TRASH
+          </span>
+        </div>
+        <div className="modal-body">
+          <div className="ow-msg">Move <strong>{filename}</strong> to Trash?</div>
+          <div className="ow-sub">You can restore it from your system Trash.</div>
+        </div>
+        <div className="modal-foot">
+          <button className="ghost-btn" onClick={onCancel}>CANCEL</button>
+          <button className="primary-btn" onClick={onConfirm}>MOVE TO TRASH</button>
         </div>
       </div>
     </div>
