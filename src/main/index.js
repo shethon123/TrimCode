@@ -23,7 +23,7 @@ function createWindow() {
     win.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
-  win.on('focus', () => { scanAndBroadcast() })
+  win.on('focus', () => { scanAndBroadcast().catch(() => {}) })
   return win
 }
 
