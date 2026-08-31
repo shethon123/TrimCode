@@ -42,6 +42,17 @@ export function buildFilename(company, refId) {
   return `${company}${refId}.txt`
 }
 
+// A stable string identifying the current scan set (company, ref/ID, and the
+// ordered list of slot codes). Used to tell whether the grid holds unsaved
+// work: compare against the signature captured at the last save or file open.
+export function scanSignature(company, refId, slots) {
+  return JSON.stringify({
+    company: company || '',
+    refId: refId || '',
+    codes: (slots || []).map((s) => s.code ?? null),
+  })
+}
+
 const FAKE_CODES = [
   'BOSCH-0445120123-7N91',
   'DENSO-095000-5471-AX',

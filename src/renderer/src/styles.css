@@ -142,6 +142,13 @@ body[data-theme="paper"] .app::before { opacity: 0.25; }
 body[data-theme="paper"] .primary-btn { color: #faf6ec; }
 .primary-btn:hover:not(:disabled) { filter: brightness(1.08); }
 
+.primary-btn.danger,
+body[data-theme="paper"] .primary-btn.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
 .kbd {
   font-size: 10px; padding: 1px 5px;
   border: 1px solid currentColor; border-radius: 2px;
@@ -598,6 +605,7 @@ body[data-theme="paper"] .save-btn { color: #faf6ec; }
   transition: border-color .15s, background .15s;
 }
 .side-item:hover { border-color: var(--accent); }
+.side-item:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
 .si-num { font-size: 10px; color: var(--fg-mute); letter-spacing: 0.05em; font-weight: 700; }
 .si-title { font-size: 14px; color: var(--fg); font-weight: 600; letter-spacing: 0.05em; }
 .si-meta { font-family: var(--font-mono); font-size: 12px; color: var(--fg-dim); margin-top: 2px; letter-spacing: 0.08em; }
@@ -694,6 +702,7 @@ body[data-theme="paper"] .modal-backdrop { background: rgba(40, 30, 20, 0.45); }
   justify-content: flex-end;
   gap: 10px;
 }
+.modal-foot .modal-tertiary { margin-right: auto; }
 
 .modal-label .dot-warn {
   background: var(--danger);

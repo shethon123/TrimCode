@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { TWEAK_DEFAULTS, FONT_STACKS, uid, groupCode, trimRight, beep, QrPreview, Icon, buildFilename, formatFileContent, parseCodeLines, normalizeSearch } from './utils'
+import { TWEAK_DEFAULTS, FONT_STACKS, uid, groupCode, trimRight, beep, QrPreview, Icon, buildFilename, formatFileContent, parseCodeLines, normalizeSearch, scanSignature } from './utils'
 import TweaksPanel from './Tweaks'
+import ConfirmDialog from './ConfirmDialog'
 
 const FLASH_MS = 250
 
@@ -23,8 +24,12 @@ export default function App() {
   const [newFilePending, setNewFilePending] = useState(false)
   const [savedFilesError, setSavedFilesError] = useState(null)
   const [trashPending, setTrashPending] = useState(null)
+  const [loadPending, setLoadPending] = useState(null)
   const scanningRef = useRef(null)
   const decodeBufferRef = useRef('')
+  // Signature of the scan set as it was last saved to disk or loaded from a
+  // file. The grid holds unsaved work when the current signature differs.
+  const savedSigRef = useRef(null)
 
   useEffect(() => { document.body.dataset.theme = tweaks.theme }, [tweaks.theme])
 
@@ -155,6 +160,7 @@ export default function App() {
     setSlots(EMPTY_SLOTS(tweaks.slotCount))
     setCompany('')
     setRefId('')
+    savedSigRef.current = scanSignature('', '', [])
     showToast('New file started')
   }
 
@@ -196,10 +202,27 @@ export default function App() {
     if (!res.ok) showToast(`Trash failed: ${res.error}`)
   }
 
-  const openFile = async (rec) => {
-    if (slots.some(s => s.code)) {
-      if (!confirm('Load this file? Current unsaved scans will be replaced.')) return
-    }
+  // True when the grid holds scans that differ from what was last saved to
+  // disk or loaded from a file. An empty grid, or one already persisted, is
+  // not "unsaved".
+  const hasUnsavedScans = () =>
+    slots.some(s => s.code) && scanSignature(company, refId, slots) !== savedSigRef.current
+
+  const openFile = (rec) => {
+    if (hasUnsavedScans()) { setLoadPending(rec); return }
+    doLoad(rec)
+  }
+
+  const saveCurrentThenLoad = () => {
+    // Per design: don't chain the load. Run the normal save; if it can't
+    // complete (missing company/ID, or an overwrite prompt), the user sees why
+    // and re-opens the file — which then loads immediately since the grid is
+    // clean.
+    setLoadPending(null)
+    saveFile()
+  }
+
+  const doLoad = async (rec) => {
     let res
     try {
       res = await window.electronAPI.readSavedFile(rec.name)
@@ -217,9 +240,12 @@ export default function App() {
       if (idx >= 0 && idx < next.length) next[idx] = { ...next[idx], code, scannedAt: Date.now() }
     })
 
-    setCompany(rec.company)
-    setRefId(rec.hasHeader ? rec.refId : '')
+    const nextCompany = rec.company
+    const nextRefId = rec.hasHeader ? rec.refId : ''
+    setCompany(nextCompany)
+    setRefId(nextRefId)
     setSlots(next)
+    savedSigRef.current = scanSignature(nextCompany, nextRefId, next)
     showToast(`Opened ${rec.name}`)
   }
 
@@ -231,6 +257,7 @@ export default function App() {
   const persistSave = async (filename, body) => {
     const result = await window.electronAPI.saveFile(filename, body)
     if (!result.success) { showToast(`Save failed: ${result.error}`); return }
+    savedSigRef.current = scanSignature(company, refId, slots)
     showToast(`Saved → ${filename}`)
   }
 
@@ -259,7 +286,7 @@ export default function App() {
         return
       }
 
-      if (overwritePending || newFilePending || trashPending) return
+      if (overwritePending || newFilePending || trashPending || loadPending) return
       const tag = document.activeElement && document.activeElement.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
 
@@ -280,7 +307,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [overwritePending, newFilePending, trashPending, slots, company, refId, tweaks, savedFiles])
+  }, [overwritePending, newFilePending, trashPending, loadPending, slots, company, refId, tweaks, savedFiles])
 
   return (
     <div className={`app layout-${tweaks.layout}`}>
@@ -340,25 +367,62 @@ export default function App() {
       </main>
 
       {overwritePending && (
-        <OverwriteModal
-          filename={overwritePending.filename}
+        <ConfirmDialog
+          title="FILE ALREADY EXISTS"
+          message={
+            <>
+              <div className="ow-msg">A file with this name already exists on disk:</div>
+              <div className="ow-filename">{overwritePending.filename}</div>
+              <div className="ow-sub">Saving will replace it with the current scan data.</div>
+            </>
+          }
+          confirmLabel="OVERWRITE"
+          cancelLabel="CANCEL"
+          destructive
           onConfirm={confirmOverwrite}
           onCancel={() => setOverwritePending(null)}
         />
       )}
 
       {newFilePending && (
-        <NewFileModal
+        <ConfirmDialog
+          title="START NEW FILE"
+          message="All data will be cleared."
+          confirmLabel="NEW FILE"
+          cancelLabel="CANCEL"
           onConfirm={confirmNewFile}
           onCancel={() => setNewFilePending(false)}
         />
       )}
 
       {trashPending && (
-        <ConfirmTrashModal
-          filename={trashPending.name}
+        <ConfirmDialog
+          title="MOVE FILE TO TRASH"
+          message={
+            <>
+              <div className="ow-msg">Move <strong>{trashPending.name}</strong> to Trash?</div>
+              <div className="ow-sub">You can restore it from your system Trash.</div>
+            </>
+          }
+          confirmLabel="MOVE TO TRASH"
+          cancelLabel="CANCEL"
+          destructive
           onConfirm={confirmTrash}
           onCancel={() => setTrashPending(null)}
+        />
+      )}
+
+      {loadPending && (
+        <ConfirmDialog
+          title={`Load ${loadPending.name}?`}
+          message={`Your ${filledCount} unsaved scan${filledCount === 1 ? '' : 's'} will be replaced.`}
+          tertiaryLabel="Save current first"
+          confirmLabel="Load anyway"
+          cancelLabel="Cancel"
+          defaultAction="cancel"
+          onTertiary={saveCurrentThenLoad}
+          onConfirm={() => { const rec = loadPending; setLoadPending(null); doLoad(rec) }}
+          onCancel={() => setLoadPending(null)}
         />
       )}
 
@@ -672,7 +736,16 @@ function Sidebar({ savedFiles, onOpen, onDelete, error, onRefresh, onReveal }) {
           ) : (
             <div className="side-list" ref={listRef} tabIndex={-1}>
               {results.map((rec) => (
-                <div key={rec.name} className="side-item" onClick={() => onOpen(rec)}>
+                <div
+                  key={rec.name}
+                  className="side-item"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onOpen(rec)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(rec) }
+                  }}
+                >
                   <div className="si-main">
                     <div className="si-title">
                       {rec.hasHeader
@@ -698,71 +771,3 @@ function Sidebar({ savedFiles, onOpen, onDelete, error, onRefresh, onReveal }) {
   )
 }
 
-function OverwriteModal({ filename, onConfirm, onCancel }) {
-  return (
-    <div className="modal-backdrop" onClick={onCancel}>
-      <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <span className="modal-label">
-            <span className="dot dot-warn" />
-            FILE ALREADY EXISTS
-          </span>
-        </div>
-        <div className="modal-body">
-          <div className="ow-msg">A file with this name already exists on disk:</div>
-          <div className="ow-filename">{filename}</div>
-          <div className="ow-sub">Saving will replace it with the current scan data.</div>
-        </div>
-        <div className="modal-foot">
-          <button className="ghost-btn" onClick={onCancel}>CANCEL</button>
-          <button className="primary-btn" onClick={onConfirm}>OVERWRITE</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function NewFileModal({ onConfirm, onCancel }) {
-  return (
-    <div className="modal-backdrop" onClick={onCancel}>
-      <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <span className="modal-label">
-            <span className="dot dot-warn" />
-            START NEW FILE
-          </span>
-        </div>
-        <div className="modal-body">
-          <div className="ow-msg">All data will be cleared.</div>
-        </div>
-        <div className="modal-foot">
-          <button className="ghost-btn" onClick={onCancel}>CANCEL</button>
-          <button className="primary-btn" onClick={onConfirm}>NEW FILE</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function ConfirmTrashModal({ filename, onConfirm, onCancel }) {
-  return (
-    <div className="modal-backdrop" onClick={onCancel}>
-      <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <span className="modal-label">
-            <span className="dot dot-warn" />
-            MOVE FILE TO TRASH
-          </span>
-        </div>
-        <div className="modal-body">
-          <div className="ow-msg">Move <strong>{filename}</strong> to Trash?</div>
-          <div className="ow-sub">You can restore it from your system Trash.</div>
-        </div>
-        <div className="modal-foot">
-          <button className="ghost-btn" onClick={onCancel}>CANCEL</button>
-          <button className="primary-btn" onClick={onConfirm}>MOVE TO TRASH</button>
-        </div>
-      </div>
-    </div>
-  )
-}
