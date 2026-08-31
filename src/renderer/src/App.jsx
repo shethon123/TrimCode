@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { TWEAK_DEFAULTS, FONT_STACKS, uid, nowStamp, groupCode, trimRight, beep, QrPreview, Icon, buildFilename, formatFileContent, normalizeSearch } from './utils'
+import { TWEAK_DEFAULTS, FONT_STACKS, uid, groupCode, trimRight, beep, QrPreview, Icon, buildFilename, formatFileContent, normalizeSearch } from './utils'
 import TweaksPanel from './Tweaks'
 
 const FLASH_MS = 250
@@ -145,7 +145,7 @@ export default function App() {
     if (!company.trim() || !refId.trim()) { showToast('Company and ID are required'); return }
 
     const filename = buildFilename(company, refId)
-    const body = formatFileContent(slots, tweaks.trimDigits)
+    const body = formatFileContent(company, refId, slots)
 
     const exists = await window.electronAPI.fileExists(filename)
     if (exists) {
@@ -205,7 +205,6 @@ export default function App() {
       filename,
       company,
       refId,
-      stamp: nowStamp(),
       count: filled.length,
       body,
       slots,

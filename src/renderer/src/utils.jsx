@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
 import QRCode from 'qrcode'
 
+export { formatFileContent, parseSavedFile, parseCodeLines } from '../../shared/savedFileFormat.js'
+
 export const TWEAK_DEFAULTS = {
   layout: 'grid',
   theme: 'light',
@@ -27,12 +29,6 @@ export const FONT_STACKS = {
 }
 
 export const uid = () => Math.random().toString(36).slice(2, 10)
-const pad2 = (n) => String(n).padStart(2, '0')
-
-export const nowStamp = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
-}
 
 export const groupCode = (code, headSize = 8) => code.length > headSize ? `${code.slice(0, headSize)} ${code.slice(headSize)}` : code
 
@@ -40,30 +36,10 @@ export const groupCode = (code, headSize = 8) => code.length > headSize ? `${cod
 // periods so "asd 123", "ASD-123" and "asd.123" all compare equal.
 export const normalizeSearch = (s) => (s || '').toUpperCase().replace(/[\s.\-]/g, '')
 
-export function nowStampFile() {
-  const d = new Date()
-  const mm = pad2(d.getMonth() + 1)
-  const dd = pad2(d.getDate())
-  const yyyy = d.getFullYear()
-  let h = d.getHours()
-  const ampm = h >= 12 ? 'PM' : 'AM'
-  h = h % 12 || 12
-  const min = pad2(d.getMinutes())
-  return `${mm}-${dd}-${yyyy} ${h}:${min} ${ampm}`
-}
-
 export const trimRight = (s, n) => (s && s.length > n ? s.slice(-n) : s || '')
 
 export function buildFilename(company, refId) {
   return `${company}${refId}.txt`
-}
-
-export function formatFileContent(slots, trimDigits) {
-  const lines = [`[${nowStampFile()}]`]
-  slots.forEach((slot, i) => {
-    lines.push(slot.code ? `${i + 1} ${slot.code}` : `${i + 1} `)
-  })
-  return lines.join('\n')
 }
 
 const FAKE_CODES = [
@@ -170,6 +146,12 @@ export const Icon = {
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.6">
       <path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0" />
       <circle cx="15" cy="6" r="2" /><circle cx="10" cy="12" r="2" /><circle cx="17" cy="18" r="2" />
+    </svg>
+  ),
+  Refresh: ({ size = 14, color = 'currentColor' }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <path d="M21 3v6h-6" />
     </svg>
   ),
 }
