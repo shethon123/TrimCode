@@ -585,7 +585,15 @@ function Sidebar({ savedFiles, onOpen, onDelete, error, onRefresh, onReveal }) {
     <aside className="sidebar">
       <div className="side-head">
         <span><Icon.Folder/> SAVED FILES</span>
-        <span className="side-count">{savedFiles.length}</span>
+        <div className="side-head-actions">
+          <button className="side-icon-btn" onClick={onRefresh} title="Rescan folder">
+            <Icon.Refresh size={14}/>
+          </button>
+          <button className="side-icon-btn" onClick={onReveal} title="Open folder in file manager">
+            <Icon.Folder size={14}/>
+          </button>
+          <span className="side-count">{error ? 0 : savedFiles.length}</span>
+        </div>
       </div>
 
       {error ? (

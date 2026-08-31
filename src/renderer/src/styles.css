@@ -617,6 +617,20 @@ body[data-theme="paper"] .save-btn { color: #faf6ec; }
 .sf-row .k { color: var(--fg-mute); }
 .sf-row .v { color: var(--fg-dim); }
 
+.side-head-actions { display: inline-flex; align-items: center; gap: 8px; }
+.side-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 4px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--fg-mute);
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.side-icon-btn:hover { color: var(--fg); border-color: var(--fg-dim); }
+.side-error .se-hint { color: var(--danger); word-break: break-word; }
+
 /* ============ MODAL ============ */
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 50;
