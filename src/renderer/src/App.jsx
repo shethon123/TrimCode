@@ -78,7 +78,9 @@ export default function App() {
   }, [])
 
   const refreshSavedFiles = useCallback(() => {
-    window.electronAPI.listSavedFiles().then(applyUpdate)
+    window.electronAPI.listSavedFiles()
+      .then(applyUpdate)
+      .catch(() => applyUpdate({ ok: false, error: 'Could not reach the file service' }))
   }, [applyUpdate])
 
   useEffect(() => {
@@ -184,7 +186,13 @@ export default function App() {
   const confirmTrash = async () => {
     const rec = trashPending
     setTrashPending(null)
-    const res = await window.electronAPI.trashFile(rec.name)
+    let res
+    try {
+      res = await window.electronAPI.trashFile(rec.name)
+    } catch {
+      showToast('Trash failed')
+      return
+    }
     if (!res.ok) showToast(`Trash failed: ${res.error}`)
   }
 
@@ -192,7 +200,13 @@ export default function App() {
     if (slots.some(s => s.code)) {
       if (!confirm('Load this file? Current unsaved scans will be replaced.')) return
     }
-    const res = await window.electronAPI.readSavedFile(rec.name)
+    let res
+    try {
+      res = await window.electronAPI.readSavedFile(rec.name)
+    } catch {
+      showToast(`Could not open ${rec.name}`)
+      return
+    }
     if (!res.ok) { showToast(`Could not open ${rec.name}`); return }
 
     const pairs = parseCodeLines(res.content)
@@ -318,7 +332,10 @@ export default function App() {
           onDelete={deleteFile}
           error={savedFilesError}
           onRefresh={refreshSavedFiles}
-          onReveal={() => window.electronAPI.revealSaveDir()}
+          onReveal={async () => {
+            const r = await window.electronAPI.revealSaveDir()
+            if (r && !r.ok) showToast(`Could not open folder: ${r.error}`)
+          }}
         />
       </main>
 

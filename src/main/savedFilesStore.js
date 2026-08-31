@@ -11,6 +11,7 @@ const CONCURRENCY = 8
 let getWindow = () => null
 let watcher = null
 let debounceTimer = null
+let scanSeq = 0
 
 export function initSavedFilesStore(getWindowFn) {
   getWindow = getWindowFn
@@ -39,7 +40,7 @@ function startWatcher() {
 
 function handleWatcherError() {
   if (watcher) { try { watcher.close() } catch {} watcher = null }
-  scanAndBroadcast()
+  scanAndBroadcast().catch(() => {})
 }
 
 function scheduleScan() {
@@ -61,11 +62,15 @@ async function mapCapped(items, limit, fn) {
 }
 
 export async function scanAndBroadcast() {
+  const seq = ++scanSeq
   const result = await scan()
   // Re-arm the watcher only after scan() has had a chance to recreate the
   // directory via its ENOENT retry. Doing this before the await risks unbounded
   // recursion when watch() throws synchronously on a missing dir.
   if (!watcher) startWatcher()
+  // A newer scan already owns the broadcast — return our own result to the
+  // list-saved-files IPC caller, but do not send a stale list to the renderer.
+  if (seq !== scanSeq) return result
   const win = getWindow()
   if (win && !win.isDestroyed()) {
     win.webContents.send('saved-files:update', result)
@@ -73,15 +78,19 @@ export async function scanAndBroadcast() {
   return result
 }
 
-async function scan() {
+function scan() {
+  return scanDir(SAVE_DIR)
+}
+
+export async function scanDir(dir) {
   let entries
   try {
-    entries = await readdir(SAVE_DIR, { withFileTypes: true })
+    entries = await readdir(dir, { withFileTypes: true })
   } catch (err) {
     if (err.code === 'ENOENT') {
       try {
         ensureSaveDir()
-        entries = await readdir(SAVE_DIR, { withFileTypes: true })
+        entries = await readdir(dir, { withFileTypes: true })
       } catch (err2) {
         return { ok: false, error: err2.message }
       }
@@ -96,7 +105,7 @@ async function scan() {
 
   const statted = await mapCapped(names, CONCURRENCY, async (name) => {
     try {
-      const s = await stat(join(SAVE_DIR, name))
+      const s = await stat(join(dir, name))
       return s.size > MAX_BYTES ? null : { name, mtimeMs: s.mtimeMs }
     } catch {
       return null
@@ -105,7 +114,7 @@ async function scan() {
 
   const records = await mapCapped(statted.filter(Boolean), CONCURRENCY, async (f) => {
     try {
-      const text = await readFile(join(SAVE_DIR, f.name), 'utf8')
+      const text = await readFile(join(dir, f.name), 'utf8')
       const { company, refId, count, hasHeader } = parseSavedFile(text, f.name)
       return { name: f.name, mtimeMs: f.mtimeMs, company, refId, count, hasHeader }
     } catch {

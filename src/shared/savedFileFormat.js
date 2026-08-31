@@ -2,7 +2,7 @@
 // imported by both the renderer (via utils.jsx) and the main-process
 // folder scanner.
 
-const HEADER_RE = /^#\s*(.*?)\s*\|\s*(.*)$/
+const HEADER_RE = /^#\s*(.*)\s*\|\s*(.*)$/
 
 export function formatFileContent(company, refId, slots) {
   const lines = [`# ${company} | ${refId}`]

@@ -101,10 +101,20 @@ frame's worth of main-process time because every fs call is async.
 - `fs.watch(SAVE_DIR, { persistent: true }, () => scheduleScan())`.
 - `scheduleScan()` — `clearTimeout(timer)`; `timer = setTimeout(scanAndBroadcast, 300)`
   (`DEBOUNCE_MS = 300`).
-- On the watcher's `'error'` event, or a synchronous throw from `fs.watch`:
-  call `scanAndBroadcast()` (which will report `{ ok:false }` if the directory
-  is now unreadable), null out the watcher handle, and re-create the watcher
-  lazily at the start of the next `scanAndBroadcast()` call if it is missing.
+- On the watcher's async `'error'` event, `handleWatcherError()` closes and
+  nulls the watcher handle, then calls `scanAndBroadcast().catch(() => {})`
+  (which will report `{ ok:false }` if the directory is now unreadable). The
+  watcher is re-created lazily at the start of the next `scanAndBroadcast()`
+  call if it is missing.
+- On a **synchronous** throw from `fs.watch(...)` inside `startWatcher()`, the
+  `catch` only logs and leaves `watcher = null`. It must **not** call
+  `handleWatcherError` or `scanAndBroadcast` — doing so recurses without bound
+  when the directory is missing (fixed in commit 2c2301e). The next
+  `scanAndBroadcast()` triggered by any other path re-arms the watcher.
+- `scanAndBroadcast()` re-arms the watcher only **after** `await scan()`, so
+  `scan()`'s `ENOENT` branch can recreate the directory first. It also carries
+  a monotonic sequence guard (`scanSeq`): only the newest scan broadcasts, so a
+  slower earlier scan cannot push a stale list.
 - `dispose()` closes the watcher and clears the timer.
 
 ### Focus + in-app re-scan
@@ -315,7 +325,14 @@ Renamed intent: opens a confirmation modal rather than mutating state.
 
 ## Testing
 
-### Unit (`src/renderer/src/utils.test.jsx`, vitest + jsdom)
+### Unit (vitest + jsdom)
+
+The format helpers and their tests live in `src/shared/savedFileFormat.js` and
+`src/shared/savedFileFormat.test.js` (`src/renderer/src/utils.jsx` re-exports
+them). `src/main/savedFilesStore.js` now has `scan()`-level unit coverage in
+`src/main/savedFilesStore.test.js` — an exported `scanDir(dir)` seam is driven
+against a temp directory to cover the filter, the size cap, mtime sort order,
+and the record shape.
 
 - `formatFileContent`
   - line 0 is `# ${company} | ${refId}`.

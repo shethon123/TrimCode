@@ -47,6 +47,12 @@ describe('parseSavedFile', () => {
       company: 'A', refId: 'B', count: 1, hasHeader: true,
     })
   })
+
+  it('splits the header on the last pipe when the company contains one', () => {
+    expect(parseSavedFile('# ACME | WIDGETS | WO-1\n1 X\n', 'x.txt')).toEqual({
+      company: 'ACME | WIDGETS', refId: 'WO-1', count: 1, hasHeader: true,
+    })
+  })
 })
 
 describe('parseCodeLines', () => {
