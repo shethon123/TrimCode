@@ -67,7 +67,7 @@ export default function TweaksPanel({ tweaks, setTweaks, open, onClose }) {
       </div>
 
       <div className="tweak-row toggle">
-        <label>BARCODE PREVIEW</label>
+        <label>QR CODE PREVIEW</label>
         <button className={`sw ${tweaks.showPreview ? 'on' : ''}`} onClick={() => patch('showPreview', !tweaks.showPreview)}>
           <span/>
         </button>

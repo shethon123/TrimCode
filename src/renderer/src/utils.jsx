@@ -1,10 +1,10 @@
 import { useEffect, useRef } from 'react'
-import JsBarcode from 'jsbarcode'
+import QRCode from 'qrcode'
 
 export const TWEAK_DEFAULTS = {
   layout: 'grid',
   theme: 'light',
-  showPreview: true,
+  showPreview: false,
   trimDigits: 6,
   autoCopy: false,
   beepOnScan: true,
@@ -33,6 +33,12 @@ export const nowStamp = () => {
   const d = new Date()
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
 }
+
+export const groupCode = (code, headSize = 8) => code.length > headSize ? `${code.slice(0, headSize)} ${code.slice(headSize)}` : code
+
+// Normalize saved-file search text: uppercase and strip spaces, dashes,
+// periods so "asd 123", "ASD-123" and "asd.123" all compare equal.
+export const normalizeSearch = (s) => (s || '').toUpperCase().replace(/[\s.\-]/g, '')
 
 export function nowStampFile() {
   const d = new Date()
@@ -94,22 +100,18 @@ export function beep(freq = 880, dur = 0.08) {
   } catch (e) {}
 }
 
-export function BarcodePreview({ value, width = 220, height = 40 }) {
+export function QrPreview({ value, size = 120 }) {
   const ref = useRef(null)
   useEffect(() => {
     if (!ref.current || !value) return
-    try {
-      JsBarcode(ref.current, value, {
-        format: 'CODE128',
-        width: 1.2,
-        height: height,
-        displayValue: false,
-        margin: 0,
-      })
-    } catch (e) {}
-  }, [value, width, height])
+    QRCode.toCanvas(ref.current, value, {
+      width: size,
+      margin: 0,
+      errorCorrectionLevel: 'M',
+    }).catch(() => {})
+  }, [value, size])
   if (!value) return null
-  return <svg ref={ref} style={{ display: 'block', width: '100%', height }} preserveAspectRatio="none" />
+  return <canvas ref={ref} style={{ display: 'block', width: size, height: size }} />
 }
 
 export const Icon = {

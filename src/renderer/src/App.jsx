@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
-import { TWEAK_DEFAULTS, FONT_STACKS, uid, nowStamp, trimRight, beep, BarcodePreview, Icon, buildFilename, formatFileContent } from './utils'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { TWEAK_DEFAULTS, FONT_STACKS, uid, nowStamp, groupCode, trimRight, beep, QrPreview, Icon, buildFilename, formatFileContent, normalizeSearch } from './utils'
 import TweaksPanel from './Tweaks'
 
 const FLASH_MS = 250
@@ -22,6 +22,8 @@ export default function App() {
   const [overwritePending, setOverwritePending] = useState(null)
   const [newFilePending, setNewFilePending] = useState(false)
   const fileCounter = useRef(1)
+  const scanningRef = useRef(null)
+  const decodeBufferRef = useRef('')
 
   useEffect(() => { document.body.dataset.theme = tweaks.theme }, [tweaks.theme])
 
@@ -70,15 +72,22 @@ export default function App() {
   const activateScan = (index) => {
     if (slots[index].code) return
     setSlots((prev) => prev.map((s, i) => i === index ? { id: uid(), code: null, scannedAt: null } : s))
+    scanningRef.current = index
+    decodeBufferRef.current = ''
     setScanning(index)
     setDecodeBuffer('')
   }
 
-  const cancelScan = () => setScanning(null)
+  const cancelScan = () => {
+    scanningRef.current = null
+    setScanning(null)
+  }
 
   const commitScan = (index, code) => {
     const updated = slots.map((s, i) => i === index ? { ...s, code, scannedAt: Date.now() } : s)
     setSlots(updated)
+    scanningRef.current = null
+    decodeBufferRef.current = ''
     setScanning(null)
     setDecodeBuffer('')
     if (tweaks.beepOnScan) beep(1200, 0.09)
@@ -210,16 +219,23 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (e) => {
-      if (scanning !== null) {
+      if (scanningRef.current !== null) {
         if (e.key === 'Escape') { e.preventDefault(); cancelScan(); return }
         if (e.key === 'Enter') {
           e.preventDefault()
-          const code = decodeBuffer.trim()
-          if (code) commitScan(scanning, code)
+          const code = decodeBufferRef.current.trim()
+          if (code) commitScan(scanningRef.current, code)
           return
         }
-        if (e.key === 'Backspace') { setDecodeBuffer((b) => b.slice(0, -1)); return }
-        if (e.key.length === 1) { setDecodeBuffer((b) => b + e.key) }
+        if (e.key === 'Backspace') {
+          decodeBufferRef.current = decodeBufferRef.current.slice(0, -1)
+          setDecodeBuffer(decodeBufferRef.current)
+          return
+        }
+        if (e.key.length === 1) {
+          decodeBufferRef.current += e.key
+          setDecodeBuffer(decodeBufferRef.current)
+        }
         return
       }
 
@@ -244,7 +260,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [scanning, decodeBuffer, overwritePending, newFilePending, slots, company, refId, tweaks, savedFiles])
+  }, [overwritePending, newFilePending, slots, company, refId, tweaks, savedFiles])
 
   return (
     <div className={`app layout-${tweaks.layout}`}>
@@ -387,6 +403,7 @@ function SlotGrid({ slots, layout, showPreview, trimDigits, scanning, decodeRead
           key={slot.id}
           index={i}
           slot={slot}
+          layout={layout}
           showPreview={showPreview}
           trimDigits={trimDigits}
           active={scanning === i}
@@ -403,10 +420,11 @@ function SlotGrid({ slots, layout, showPreview, trimDigits, scanning, decodeRead
   )
 }
 
-function Slot({ index, slot, showPreview, trimDigits, active, decodeReadout, justFlashed, onActivate, onCancelScan, onCopy, onClear, copied }) {
+function Slot({ index, slot, layout, showPreview, trimDigits, active, decodeReadout, justFlashed, onActivate, onCancelScan, onCopy, onClear, copied }) {
   const tag = String(index + 1).padStart(2, '0')
   const trimmed = slot.code ? trimRight(slot.code, trimDigits) : null
   const filled = !!slot.code
+  const previewSize = layout === 'stack' ? 90 : layout === 'rows' ? 70 : 120
   const [confirmClear, setConfirmClear] = useState(false)
   const confirmTimeout = useRef(null)
 
@@ -467,10 +485,10 @@ function Slot({ index, slot, showPreview, trimDigits, active, decodeReadout, jus
         ) : filled ? (
           <>
             <div className="slot-code">{trimmed}</div>
-            <div className="slot-full">{slot.code}</div>
+            <div className="slot-full">{groupCode(slot.code)}</div>
             {showPreview && (
               <div className="slot-preview">
-                <BarcodePreview value={slot.code} width={220} height={36}/>
+                <QrPreview value={slot.code} size={previewSize}/>
               </div>
             )}
           </>
@@ -518,31 +536,98 @@ function ActionBar({ onCopyAll, onSave, filledCount, total, copied, readyToSave 
 }
 
 function Sidebar({ savedFiles, onOpen, onDelete }) {
+  const [query, setQuery] = useState('')
+  const [debounced, setDebounced] = useState('')
+  const inputRef = useRef(null)
+  const listRef = useRef(null)
+
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(query), 150)
+    return () => clearTimeout(id)
+  }, [query])
+
+  const clearSearch = () => { setQuery(''); setDebounced('') }
+
+  const nq = normalizeSearch(debounced)
+  const searching = nq.length > 0
+
+  const results = useMemo(() => {
+    if (!searching) return savedFiles
+    return savedFiles.filter((rec) =>
+      normalizeSearch(rec.company).includes(nq) ||
+      normalizeSearch(rec.refId).includes(nq)
+    )
+  }, [savedFiles, nq, searching])
+
   return (
     <aside className="sidebar">
       <div className="side-head">
         <span><Icon.Folder/> SAVED FILES</span>
         <span className="side-count">{savedFiles.length}</span>
       </div>
-      {savedFiles.length === 0 && (
+
+      {savedFiles.length > 0 && (
+        <div className="side-search">
+          <input
+            ref={inputRef}
+            type="text"
+            className="side-search-input"
+            placeholder="Search company or ref/ID"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                clearSearch()
+                listRef.current?.focus()
+              }
+            }}
+            spellCheck={false}
+          />
+          {query && (
+            <button
+              className="side-search-clear"
+              onClick={() => { clearSearch(); inputRef.current?.focus() }}
+              title="Clear search"
+            >
+              <Icon.X size={13}/>
+            </button>
+          )}
+        </div>
+      )}
+
+      {searching && savedFiles.length > 0 && (
+        <div className="side-result-count">{results.length} of {savedFiles.length} files</div>
+      )}
+
+      {savedFiles.length === 0 ? (
         <div className="side-empty">
           <div className="se-icon"><Icon.Folder size={26}/></div>
           <div className="se-title">NO FILES YET</div>
           <div className="se-hint">Saved .txt files will appear here<br/>and in ~/Documents/trimcodes/</div>
         </div>
-      )}
-      <div className="side-list">
-        {savedFiles.map((rec) => (
-          <div key={rec.id} className="side-item" onClick={() => onOpen(rec)}>
-            <div className="si-main">
-              <div className="si-title">{rec.company} <span className="sep">·</span> {rec.refId}</div>
-              <div className="si-meta">{rec.count} codes</div>
-              <div className="si-file">{rec.filename}</div>
+      ) : searching && results.length === 0 ? (
+        <div className="side-empty">
+          <div className="se-icon"><Icon.Folder size={26}/></div>
+          <div className="se-title">NO MATCHES</div>
+          <div className="se-hint">{`No files match '${debounced}'`}</div>
+          <button className="ghost-btn" onClick={() => { clearSearch(); inputRef.current?.focus() }}>CLEAR SEARCH</button>
+        </div>
+      ) : (
+        <div className="side-list" ref={listRef} tabIndex={-1}>
+          {results.map((rec) => (
+            <div key={rec.id} className="side-item" onClick={() => onOpen(rec)}>
+              <div className="si-main">
+                <div className="si-title">{rec.company} <span className="sep">·</span> {rec.refId}</div>
+                <div className="si-meta">{rec.count} codes</div>
+                <div className="si-file">{rec.filename}</div>
+              </div>
+              <div className="si-del" onClick={(e) => { e.stopPropagation(); onDelete(rec) }}><Icon.X size={12}/></div>
             </div>
-            <div className="si-del" onClick={(e) => { e.stopPropagation(); onDelete(rec) }}><Icon.X size={12}/></div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
+
       <div className="side-foot">
         <div className="sf-row"><span className="k">DIR</span><span className="v">~/Documents/trimcodes/</span></div>
         <div className="sf-row"><span className="k">FMT</span><span className="v">.txt · plain</span></div>
